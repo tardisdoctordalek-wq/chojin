@@ -1,0 +1,2939 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>261019 통합차트</title>
+<!--
+[261019 업데이트]
+- C/C 항목별 NRS 입력 추가 (증상 기입칸 아래 NRS 버튼 → 0~10 숫자칩, 같은 값 재클릭 시 해제)
+- C/C 항목별 ROM 입력 팝업 추가 (경항부·요배부·상지부·하지부)
+  · 동작 체크 후 각도 입력, AAOS 정상범위 표시, 정상 미만 각도 빨간색 표시
+  · 척추 측굴·회전 및 사지 관절 전 동작은 Lt/Rt 두 칸, 사지는 측별로 묶어 출력
+  · 흉요추 정상범위는 AAOS 원본 대조 전 (학습용 정리 자료 기준)
+- C/C 항목별 이학적검사 입력 팝업 추가 (경항·요배·흉복·상지·하지, 40종)
+  · +/−/± 결과, 좌우 구분(Distraction·Valsalva·Milgram 제외), SLR·Well-leg raise 각도 입력
+- 환자차트(자보·건보) C/C 단락에 NRS → ROM → PE 순 출력, 치료플랜·메모에는 미포함
+- 신규 데이터/함수: ROM_DATA, PE_DATA, ccExtra, initCCExtra, getCCExtraLines, openRom/openPe 외 (기존 함수·변수명 변경 없음)
+- 건보 차트 C/C 객체에 key 필드 추가 (라벨 수정과 무관하게 NRS·ROM·PE 연결용)
+-->
+<!--
+[260908 업데이트]
+- 기본 정보에 "담당한의사" 입력란 추가 (localStorage 자동 저장/복원)
+- 치료플랜/환자차트 하단에 "메모" 출력 및 복사 기능 추가
+  · 자보: 경(수상일+21일)담당한의사/추나여부/첩약명3-1(초진일+7일)
+    첩약 미선택 시 "경(...)담당한의사/추나여부/첩약보류"만 표시(3-1·날짜 생략)
+  · 건보: 담당한의사 이름만 표시
+- 미완성 상태였던 "자보 날짜 계산기" 카드와 관련 코드(renderDateCalc, copyCalcBlock, 전용 CSS) 전체 제거
+- (버그 수정) 위 제거 작업 중 공용 복사 함수 doCopy가 함께 삭제되어 모든 복사 버튼이 동작하지 않던 문제 수정
+- "이름"·"담당한의사" 입력란에 안내 문구 추가 — 한글 입력 후 창 전환 시 마지막 글자가 유실되는 IME 조합 문제 예방 (입력 후 스페이스바 권장)
+-->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f4f6fb;--surface:#ffffff;--surface2:#eef1f8;--border:#d0d7e8;--accent:#2563eb;--purple:#7c3aed;--green:#16a34a;--red:#dc2626;--yellow:#d97706;--text:#1e2236;--text2:#4b5577;--text3:#8b93b0;--teal:#0d9488;--pink:#db2777;--orange:#ea580c;}
+  body.dark-mode{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3348;--accent:#4f8ef7;--purple:#7c3aed;--green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--text:#e8eaf6;--text2:#8b90a7;--text3:#5a5f7a;--teal:#14b8a6;--pink:#f472b6;--orange:#fb923c;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);font-family:'Noto Sans KR',sans-serif;color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:36px 16px 60px;}
+  .header{text-align:center;margin-bottom:28px;}
+  .header .sub{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.3em;color:var(--accent);text-transform:uppercase;margin-bottom:6px;}
+  .header h1{font-size:22px;font-weight:700;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 26px;width:100%;max-width:740px;margin-bottom:14px;}
+  .card-title{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.25em;color:var(--text3);text-transform:uppercase;margin-bottom:16px;}
+  .section-label{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;margin-top:16px;}
+  .row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;}
+  .fg{display:flex;flex-direction:column;gap:6px;}
+  .lbl{font-size:11px;font-weight:500;color:var(--text2);}
+  input[type=text],input[type=date],textarea{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:14px;outline:none;transition:border-color .2s;color-scheme:light;}
+  body.dark-mode input[type=date]{color-scheme:dark;}
+  input:focus,textarea:focus{border-color:var(--accent);}
+  input::placeholder,textarea::placeholder{color:var(--text3);}
+  #patientName{width:160px;}
+  textarea{resize:vertical;width:100%;min-height:72px;line-height:1.6;}
+  .chip-row{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{cursor:pointer;padding:8px 17px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:13px;font-weight:500;user-select:none;transition:all .15s;}
+  .seat-chip{cursor:pointer;padding:8px 15px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:13px;font-weight:500;user-select:none;transition:all .15s;}
+  .seat-chip.active{background:rgba(244,114,182,.15);border-color:var(--pink);color:var(--pink);}
+  .xr-grid{display:flex;flex-wrap:wrap;gap:8px;}
+  .xr-chip{cursor:pointer;padding:7px 13px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:12px;font-weight:500;user-select:none;transition:all .15s;display:flex;align-items:center;gap:4px;}
+  .xr-chip.active{background:rgba(245,158,11,.14);border-color:var(--yellow);color:var(--yellow);}
+  .xr-chip.locked{background:rgba(239,68,68,.1);border-color:var(--red);color:var(--red);cursor:default;opacity:.45;}
+  .xr-chip.locked.show{opacity:1;}
+  .side-badge{font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(245,158,11,.3);color:var(--yellow);}
+  .pt-side-badge{font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(20,184,166,.3);color:var(--teal);}
+  .bi-arrow{font-size:9px;opacity:.4;}
+  .act-chip{cursor:pointer;padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:13px;font-weight:500;user-select:none;transition:all .15s;}
+  .act-chip.active{background:rgba(124,58,237,.18);border-color:var(--purple);color:#a78bfa;}
+  /* 침치료만 활성 시: 형제 칩들을 CSS로 흐리게 — JS에서 .침전용 클래스를 chip-row에 부여 */
+  .chip-row.exclusive-on .act-chip:not([data-val="침치료만"]){opacity:.3;cursor:not-allowed;pointer-events:none;}
+  .pt-block{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:10px;}
+  .pt-block-title{font-size:12px;font-weight:700;color:var(--teal);margin-bottom:12px;}
+  .ict-toggle{display:flex;gap:8px;margin-bottom:12px;}
+  .ict-btn{cursor:pointer;padding:7px 18px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:13px;font-weight:600;user-select:none;transition:all .15s;}
+  .ict-btn.active{background:rgba(20,184,166,.15);border-color:var(--teal);color:var(--teal);}
+  .body-chips{display:flex;flex-wrap:wrap;gap:7px;}
+  .body-chip{cursor:pointer;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:12px;font-weight:500;user-select:none;transition:all .15s;display:flex;align-items:center;gap:4px;}
+  .body-chip.active{background:rgba(20,184,166,.14);border-color:var(--teal);color:var(--teal);}
+  .deadline-box{display:flex;align-items:center;gap:14px;}
+  .dl-val{background:var(--surface2);border:1px solid var(--green);border-radius:8px;padding:10px 16px;font-family:'IBM Plex Mono',monospace;font-size:15px;color:var(--green);font-weight:700;min-width:155px;}
+  .dl-hint{font-size:12px;color:var(--text3);}
+  .output-wrap{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:20px 24px;width:100%;max-width:740px;margin-bottom:14px;}
+  .out-label{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.25em;color:var(--text3);text-transform:uppercase;margin-bottom:12px;}
+  #outputText{font-size:8pt;line-height:1.95;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;}
+  #chartText{font-size:8pt;line-height:1.95;font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;}
+  .c-blue{color:var(--accent);font-weight:700;}.c-yellow{color:var(--yellow);}.c-purple{color:#a78bfa;}.c-green{color:var(--green);font-weight:600;}.c-cyan{color:#22d3ee;}.c-pink{color:var(--pink);}.c-teal{color:var(--teal);}.c-orange{color:var(--orange);}.c-text{color:var(--text);}
+  .divider{width:100%;max-width:740px;height:1px;background:var(--border);margin:2px 0 14px;}
+  .btn-copy{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px 32px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;letter-spacing:.03em;transition:opacity .15s,transform .1s;}
+  .btn-copy:hover{opacity:.85;}.btn-copy:active{transform:scale(.97);}
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(5px);}
+  .overlay.open{display:flex;}
+  .popup{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:30px 28px;width:300px;box-shadow:0 24px 60px rgba(0,0,0,.6);animation:popIn .17s ease;}
+  @keyframes popIn{from{transform:scale(.88);opacity:0;}to{transform:scale(1);opacity:1;}}
+  .popup-title{font-size:17px;font-weight:700;margin-bottom:4px;}
+  .popup-sub{font-size:12px;color:var(--text3);margin-bottom:22px;}
+  .popup-opts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;}
+  .pop-btn{cursor:pointer;padding:14px 8px;border-radius:10px;text-align:center;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:13px;font-weight:600;user-select:none;transition:all .15s;font-family:'Noto Sans KR',sans-serif;line-height:1.5;}
+  .pop-side{font-size:10px;opacity:.6;display:block;}
+  .popup-actions{display:flex;gap:8px;}
+  .pop-cancel{flex:1;padding:11px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+  .pop-confirm{flex:2;padding:11px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+  .xr-pop .pop-btn.sel{background:rgba(245,158,11,.18);border-color:var(--yellow);color:var(--yellow);}
+  .pt-pop .pop-btn.sel{background:rgba(20,184,166,.18);border-color:var(--teal);color:var(--teal);}
+  #admitCard{display:none;}#ptOutpatient{display:none;}#ptInpatient{display:none;}
+
+  /* 한약 팝업 */
+  .herb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;}
+  .herb-overlay.open{display:flex;}
+  .herb-popup{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(95vw,520px);padding:20px;margin:auto;}
+  .herb-popup-title{font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px;text-align:center;}
+  .herb-step{display:none;}.herb-step.active{display:block;}
+  .herb-group-title{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;margin:14px 0 6px;}
+  .herb-rx-btn{display:block;width:100%;text-align:left;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;margin-bottom:5px;cursor:pointer;color:var(--text2);font-size:12px;font-family:inherit;transition:all .15s;}
+  .herb-rx-btn:hover{border-color:var(--purple);color:var(--text);}
+  .herb-rx-btn.sel{background:rgba(124,58,237,.18);border-color:var(--purple);color:#a78bfa;font-weight:600;}
+  .herb-rx-name{font-weight:700;font-size:13px;}
+  .herb-rx-ingr{color:var(--text3);font-size:11px;margin-top:2px;}
+  .herb-div-title{font-size:13px;font-weight:700;color:var(--accent);margin:16px 0 8px;border-left:3px solid var(--accent);padding-left:8px;}
+  .herb-div-note{font-size:11px;color:var(--text3);margin-bottom:10px;}
+  .herb-add-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+  .herb-add-btn{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;}
+  .herb-add-btn:hover:not(.herb-add-dup){border-color:var(--accent);}
+  .herb-add-btn.herb-add-dup{opacity:.35;cursor:not-allowed;background:var(--surface2);border-color:var(--border);color:var(--text3);}
+  .herb-add-btn.sel{background:rgba(79,142,247,.18);border-color:var(--accent);color:var(--accent);font-weight:600;}
+  .herb-add-btn.sel2{background:rgba(20,184,166,.18);border-color:var(--teal);color:var(--teal);font-weight:600;}
+  .herb-add-btn.sel3{background:rgba(251,146,60,.18);border-color:var(--orange);color:var(--orange);font-weight:600;}
+  .herb-sel-info{font-size:11px;color:var(--text3);padding:8px 10px;background:var(--surface2);border-radius:6px;margin-bottom:10px;min-height:36px;}
+  .herb-pop-actions{display:flex;gap:8px;margin-top:16px;}
+  .herb-pop-actions button{flex:1;padding:11px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;}
+  .herb-cancel{background:var(--surface2);color:var(--text2);}
+  .herb-confirm{background:var(--purple);color:#fff;}
+  .herb-confirm:disabled{opacity:.4;cursor:not-allowed;}
+  .herb-back{background:var(--surface2);color:var(--text2);flex:0.5;}
+  /* C/C 섹션 */
+  .cc-item{margin-bottom:10px;}
+  .cc-header{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);user-select:none;transition:all .15s;}
+  .cc-header.active{background:rgba(79,142,247,.14);border-color:var(--accent);}
+  .cc-check{width:16px;height:16px;border-radius:4px;border:2px solid var(--text3);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;}
+  .cc-header.active .cc-check{background:var(--accent);border-color:var(--accent);}
+  .cc-check-mark{color:#fff;font-size:11px;font-weight:700;display:none;}
+  .cc-header.active .cc-check-mark{display:block;}
+  .cc-label{font-size:13px;font-weight:600;color:var(--text2);flex:1;}
+  .cc-header.active .cc-label{color:var(--accent);}
+  .cc-detail{display:none;margin-top:6px;padding-left:4px;}
+  .cc-header.active + .cc-detail{display:block;}
+  .cc-detail input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;outline:none;}
+  .cc-detail input:focus{border-color:var(--accent);}
+  /* GB 전용 C/C */
+  .cc-edit-btn{margin-left:auto;flex-shrink:0;font-size:11px;color:var(--text3);cursor:pointer;padding:2px 6px;border-radius:4px;border:1px solid transparent;transition:all .15s;user-select:none;}
+  .cc-edit-btn:hover{border-color:var(--border);color:var(--text2);background:var(--bg);}
+  .cc-label-input{flex:1;background:var(--bg);border:1px solid var(--accent);border-radius:4px;padding:2px 6px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:600;outline:none;}
+  .cc-onset{border-color:var(--purple)!important;background:rgba(124,58,237,.06)!important;}
+  .cc-onset::placeholder{color:var(--purple)!important;opacity:.5;}
+  /* 모드 스위처 탭 */
+  .mode-tabs{display:flex;gap:8px;justify-content:center;margin-bottom:18px;}
+  .mode-tab{flex:1;max-width:150px;padding:10px 0;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text3);font-size:14px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .18s;text-align:center;}
+  .mode-tab.active{border-color:var(--accent);background:rgba(79,142,247,.15);color:var(--accent);}
+  .mode-tab.active-gb{border-color:var(--green);background:rgba(34,197,94,.12);color:var(--green);}
+  /* ta-only / gb-only */
+  .ta-only{display:block;}
+  .gb-only{display:none;}
+  body.mode-gb .ta-only{display:none;}
+  body.mode-gb .gb-only{display:block;}
+  body.mode-gb .ta-only-inline{display:none;}
+  body.mode-gb .gb-only-inline{display:inline-flex;}
+  .gb-only-inline{display:none;}
+  .ta-only-inline{display:inline-flex;}
+  /* GB 모드에서 C/C onset/edit 표시 */
+  body.mode-ta .cc-onset{display:none!important;}
+  body.mode-ta .cc-edit-btn{display:none!important;}
+  body.mode-ta .gb-cc-block{display:none!important;}
+  /* 변증 선택 — select 드롭다운 (117종) */
+  #bjSelect{width:100%;max-width:420px;padding:9px 12px;border-radius:8px;
+    background:var(--surface2);border:1px solid var(--border);color:var(--text);
+    font-size:12px;font-family:inherit;outline:none;cursor:pointer;}
+  #bjSelect:focus{border-color:var(--accent);}
+  #bjSelect optgroup{background:var(--surface);color:var(--text3);font-size:11px;}
+  #bjSelect option{background:var(--surface);color:var(--text);}
+  /* C/C — NRS · ROM */
+  .cc-extra{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;}
+  .cc-extra-btn{cursor:pointer;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:12px;font-weight:600;user-select:none;transition:all .15s;}
+  .cc-extra-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .cc-extra-btn.has-val{background:rgba(79,142,247,.14);border-color:var(--accent);color:var(--accent);}
+  .nrs-row{display:none;gap:4px;flex-wrap:wrap;margin-top:6px;}
+  .nrs-row.open{display:flex;}
+  .nrs-chip{cursor:pointer;min-width:30px;text-align:center;padding:5px 0;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:12px;font-weight:600;user-select:none;transition:all .15s;font-family:'IBM Plex Mono',monospace;}
+  .nrs-chip.active{background:rgba(220,38,38,.14);border-color:var(--red);color:var(--red);}
+  .rom-summary{font-size:11px;color:var(--text3);margin-top:5px;line-height:1.5;}
+  .rom-popup{width:min(94vw,460px);max-height:86vh;overflow-y:auto;padding:24px 22px;}
+  .rom-joint{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;}
+  .rom-joint-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+  .rom-joint-name{font-size:13px;font-weight:700;color:var(--teal);margin-right:auto;}
+  .rom-move{display:flex;align-items:center;gap:8px;padding:5px 0;flex-wrap:wrap;}
+  .rom-move label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer;min-width:92px;}
+  .rom-move input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;}
+  .rom-norm{font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace;}
+  .rom-deg-wrap{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text3);}
+  .rom-deg{width:58px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-size:13px;outline:none;font-family:'IBM Plex Mono',monospace;}
+  .rom-deg:focus{border-color:var(--accent);}
+  .rom-deg.low{border-color:var(--red);color:var(--red);}
+  /* 이학적검사 */
+  .pe-res{display:inline-flex;gap:3px;}
+  .pe-chip{cursor:pointer;min-width:26px;text-align:center;padding:3px 0;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:12px;font-weight:700;user-select:none;font-family:'IBM Plex Mono',monospace;}
+  .pe-chip.pos.active{background:rgba(220,38,38,.14);border-color:var(--red);color:var(--red);}
+  .pe-chip.neg.active{background:rgba(22,163,74,.14);border-color:var(--green);color:var(--green);}
+  .pe-chip.eq.active{background:rgba(217,119,6,.14);border-color:var(--yellow);color:var(--yellow);}
+  .pe-side{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text3);margin-right:8px;}
+  .pe-deg{width:50px;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="sub">Oriental Medicine Chart</div>
+  <h1>차트 작성기</h1>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);margin-top:6px;letter-spacing:.05em;">last updated 2026.10.19 v7</div>
+  <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+    <button onclick="document.getElementById('changelogOverlay').classList.add('open')" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:5px 14px;color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;cursor:pointer;letter-spacing:.05em;transition:all .15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">📋 수정내역</button>
+    <button id="themeToggleBtn" onclick="toggleTheme()" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:5px 14px;color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;cursor:pointer;letter-spacing:.05em;transition:all .15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">🌙 다크 모드</button>
+  </div>
+</div>
+
+<!-- 모드 탭 -->
+<div class="mode-tabs">
+  <button class="mode-tab active" id="tab-ta" onclick="setChartMode('ta')">🚗 자동차보험</button>
+  <button class="mode-tab" id="tab-gb" onclick="setChartMode('gb')">🏥 건강보험</button>
+</div>
+
+<!-- 수정내역 팝업 -->
+<div class="overlay" id="changelogOverlay" onclick="if(event.target===this)this.classList.remove('open')">
+    <div class="popup" style="width:360px;max-height:80vh;overflow-y:auto;">
+    <div class="popup-title" style="margin-bottom:2px;">📋 수정내역</div>
+    <div class="popup-sub" style="margin-bottom:16px;">통합 차트 작성기 업데이트 기록</div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--accent);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.10.19 v7 (최신)</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 기능 추가</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">C/C 항목별 NRS 입력 추가 — 증상 기입칸 아래 NRS 버튼 → 0~10 숫자칩 선택 (자보·건보 공통, 환자차트에만 출력)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">C/C 항목별 ROM 입력 추가 (경항부·요배부·상지부·하지부) — 팝업에서 동작 체크 후 각도 입력, AAOS 정상범위 표시 및 정상 미만 빨간색 표시</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">ROM 좌우 구분 — 척추 측굴·회전과 사지 관절 전 동작은 Lt/Rt 두 칸 입력, 사지는 측별로 묶어 출력</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">C/C 항목별 이학적검사 입력 추가 (근골격계 5개 부위, 40종) — +/−/± 결과, 좌우 구분, SLR·Well-leg raise 각도 입력 가능</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">환자차트 C/C 단락에 NRS → ROM → PE 순서로 출력 (치료플랜·메모에는 미포함)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--yellow);">흉요추 정상범위(굴곡80·신전25·측굴35·회전45)는 AAOS 원본 대조 전 — 기준표와 다르면 수정 필요</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.09.08 v6</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 기능 추가</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">기본 정보에 "담당한의사" 입력란 추가 — 한 번 입력하면 브라우저에 자동 저장되어 다음 실행 시에도 유지됨</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">치료플랜·환자차트 아래에 "메모" 출력 및 복사 기능 추가 — 자보: 경(수상일+21일)담당한의사/추나여부/첩약명3-1(초진일+7일), 첩약 미선택 시 "첩약보류"만 표시 / 건보: 담당한의사만 표시</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 제거</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--yellow);">미완성 상태였던 "자보 날짜 계산기" 카드 및 관련 코드(renderDateCalc, copyCalcBlock) 전체 제거</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 버그 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">위 제거 작업 중 공용 복사 함수(doCopy)가 함께 삭제되어 모든 복사 버튼이 동작하지 않던 문제 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--yellow);">"이름"·"담당한의사" 입력란에 안내 문구 추가 — 한글 입력 후 창 전환 시 마지막 글자가 유실되는 IME 조합 문제 예방 (입력 후 스페이스바 권장)</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.08.18 v5</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 변경</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">변증 선택 — 기존 칩 10종 → KCD 117종(통계청 한의병증 U50-U79) select 드롭다운으로 전면 교체, 대분류 22개로 그룹화</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">BJ_DATA(망진·절진) 117종 데이터로 전면 교체</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--yellow);">KCD 117종에 없던 기존 3종(기체혈어증·풍한습비증·담음증)은 제거됨 — 필요 시 BJ_DATA에 재추가 가능</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.08.07 v4</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 기능 추가</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">XR "촬영 안 함" 옵션 추가 — 체크 시 부위 선택 잠금, 출력에 [x-ray] 미시행 표시</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">C/C 내과계(두통·어지러움, 소화기, 부인과, 비뇨생식계, 대사성, 신경성) 자보에서도 입력 가능하도록 개방</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">환자차트 약침 부위 수 자동 계산 — 추나 시행 시 1부위, 미시행 시 2부위 (자보·건보 공통)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">치료동선 드래그 정렬 기능 추가 — 칩을 끌어서 순서 변경, ✕ 버튼으로 단계 삭제, "기본 순서" 버튼으로 초기화</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">자보 입원기한에 "경상(1주)/골절" 선택 추가 — 골절 선택 시 부위 → 세부유형 → 경도/중등도/고도 단계로 주수 자동입력 (전치기준.pdf 기준)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">건보 입원기한에 "2주 자동"(초진일 기준) 모드 추가 — 기본값으로 설정, 날짜 직접선택·추후지정은 그대로 유지</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 버그 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">XR 미시행 선택 시에도 입원 chest PA 때문에 촬영실·xr설명이 남아있던 문제 수정 — 미시행 체크 시 무조건 생략</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">C/C를 3개 이상 체크해도 약침 라인에 모든 부위가 나열되던 문제 수정 — 약침 1부위면 1개, 2부위면 2개까지만 표시</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">IR / IR·ICT 라인도 C/C 개수와 무관하게 최대 2부위까지만 표시하도록 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">날짜계산표(renderDateCalc)에서 DOM 미준비 시 null 참조로 스크립트가 중단되던 문제 방어 처리</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">골절 주수 전면 재작성 — 전치기준 표의 값 순서를 잘못 읽어(경도/중등도/고도 자리에 고도·종결·재취업 값이 들어감) 전 항목이 과다 산정되던 오류 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">골절 표와 탈구 표의 값이 섞여 있던 문제 수정 — 탈구 항목은 [탈구] 접두어로 분리 표기</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.04.03 v3</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 버그 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">변증 칩이 액팅 배열(al)에 포함되던 문제 수정 (자보·건보 모두)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">모드 전환 시 2차 치료 설정 초기화 누락 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">TA 모드 환자차트에 건보 전용 내과계 C/C 항목이 찍히던 문제 수정</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.04.03 v2</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 기능 추가</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">변증 선택 카드 — 자보·건보 공통 (액팅 카드 다음 배치)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">자보 — 첩약 미선택 시 변증 선택으로 문진·망진·절진 자동 출력</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">자보 — 첩약 선택 시 변증 카드 자동 숨김</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">환자차트 단락 구분 (액팅·C/C·O/S·타병원 사이 빈줄 추가)</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 버그 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">건보 환자차트 타병원 입력값 미반영 수정 (otherHospitalGB)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">모드 전환 시 변증 선택 초기화 누락 수정</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.04.03</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 버그 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">건보 입원기한 모드 초기값 오류 수정 (auto → pick)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">모드 전환 시 XR·PT·좌석 선택 초기화 누락 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">침치료만 활성 시 출력에 다른 액팅 함께 찍히던 문제 수정 (플랜·차트 모두)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">모드 탭 클래스 중복 처리 코드 정리</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">GB 모드에서 침치료만 JS 호출 시 침·부항 선택 초기화되던 문제 방어</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.04.02</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;">✦ 통합 차트 출시</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">자보·건보 통합 버전 — 상단 탭으로 모드 전환</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">모드 배지 자동 표시 (기본 정보 TA/건보 칩 제거)</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 액팅</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">스티커침 추가 (자보·건보 공통)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">자보 — 침치료만 추가 (선택 시 다른 액팅 잠금)</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">건보 — 침·부항 기본 선택으로 시작</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 건보 기능</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">입원기한 — 날짜 직접 선택 / 추후 지정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--accent);">물치 출력 → ICT1/목, ICT2/목 허리 형식</li>
+      <li style="font-size:11px;color:var(--text3);padding:4px 8px;letter-spacing:.05em;font-family:'IBM Plex Mono',monospace;margin-top:4px;">✦ 버그 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">모드 탭 전환, 변증 선택, C/C 레이블 수정, 첩약 칩 오류 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">건보 입원기한 계산 오류 수정</li>
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--red);">물치 ICT 부위수 자동 계산 오류 수정</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.03.30</div>
+    <ul style="list-style:none;padding:0;margin:0 0 6px;display:flex;flex-direction:column;gap:5px;">
+      <li style="font-size:12px;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--border);">XR 직접입력, 추후촬영, ICT 직접입력, 입원 2차치료 일정, 첩약 가감 등 주요 기능 추가</li>
+    </ul>
+    <div style="height:10px;"></div>
+
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.1em;margin-bottom:6px;">2026.03.06</div>
+    <ul style="list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:6px;">
+      <li style="font-size:12px;color:var(--text3);padding:7px 10px;background:var(--surface2);border-radius:6px;border-left:2px solid var(--border);">최초 배포</li>
+    </ul>
+    <button onclick="document.getElementById('changelogOverlay').classList.remove('open')" style="width:100%;padding:10px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;">닫기</button>
+  </div>
+</div>
+
+<!-- 기본 정보 -->
+<div class="card">
+  <div class="card-title">기본 정보</div>
+  <div class="row">
+    <div class="fg">
+      <div class="lbl">이름 <span style="color:var(--yellow);font-size:10px;">(입력 후 스페이스바 한 번 눌러주세요 — 창 전환 시 마지막 글자 유실 방지)</span></div>
+      <input type="text" id="patientName" placeholder="홍길동" oninput="render()">
+    </div>
+    <div class="fg">
+      <div class="lbl">구분</div>
+      <div class="chip-row">
+        <div id="modeBadge" style="padding:8px 17px;border-radius:8px;font-size:13px;font-weight:700;"></div>
+        <div class="chip" id="chip-in" onclick="toggleType('입원')">입원</div>
+        <div class="chip" id="chip-out" onclick="toggleType('통원')">통원</div>
+      </div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:14px;">
+    <div class="fg">
+      <div class="lbl">담당한의사 <span style="color:var(--text3);font-size:10px;">(메모 복사에 사용, 자동 저장됨)</span> <span style="color:var(--yellow);font-size:10px;">— 입력 후 스페이스바 한 번 눌러주세요</span></div>
+      <input type="text" id="doctorName" placeholder="예) 김민재" oninput="localStorage.setItem('doctorName',this.value);render()">
+    </div>
+  </div>
+</div>
+
+<!-- 수상일 (TA) -->
+<div class="card ta-only">
+  <div class="card-title">수상일 &nbsp;<span style="color:var(--text3);font-size:9px;font-family:'IBM Plex Mono',monospace;">(차트에 표시 안 됨)</span></div>
+  <div class="row" style="margin-bottom:18px;">
+    <div class="fg">
+      <div class="lbl">수상일</div>
+      <input type="date" id="injuryDate" onchange="render()">
+    </div>
+    <div class="fg">
+      <div class="lbl">초진일 <span style="color:var(--text3);font-size:10px;">(미입력 시 오늘 기준으로 계산)</span></div>
+      <input type="date" id="firstVisitDate" onchange="render()">
+    </div>
+  </div>
+  <div class="fg" style="margin-bottom:18px;">
+    <div class="lbl">사고 경위</div>
+    <textarea id="accidentDesc" placeholder="예) 신호 대기 중 후방 추돌" oninput="render()"></textarea>
+  </div>
+  <div class="fg">
+    <div class="lbl">좌석 위치</div>
+    <div class="chip-row">
+      <div class="seat-chip" data-val="운전석" onclick="toggleSeat(this)">운전석</div>
+      <div class="seat-chip" data-val="조수석" onclick="toggleSeat(this)">조수석</div>
+      <div class="seat-chip" data-val="뒷좌석" onclick="toggleSeat(this)">뒷좌석</div>
+      <div class="seat-chip" data-val="오토바이" onclick="toggleSeat(this)">오토바이</div>
+      <div class="seat-chip" data-val="버스·승합차" onclick="toggleSeat(this)">버스·승합차</div>
+      <div class="seat-chip" data-val="보행자" onclick="toggleSeat(this)">보행자</div>
+      <div class="seat-chip" data-val="자전거/퀵보드/기타" onclick="toggleSeat(this)">자전거/퀵보드/기타</div>
+    </div>
+  </div>
+  <div class="fg" style="margin-top:14px;">
+    <div class="lbl">타병원 치료</div>
+    <input type="text" id="otherHospital" placeholder="없으면 비워두세요 (기본: x)" style="width:100%" oninput="render()">
+  </div>
+</div>
+
+<!-- 초진일 (GB) -->
+<div class="card gb-only">
+  <div class="card-title">초진일 &nbsp;<span style="color:var(--text3);font-size:9px;font-family:'IBM Plex Mono',monospace;">(차트에 표시 안 됨)</span></div>
+  <div class="row" style="margin-bottom:18px;">
+    <div class="fg">
+      <div class="lbl">초진일 <span style="color:var(--text3);font-size:10px;">(미입력 시 오늘 기준으로 계산)</span></div>
+      <input type="date" id="firstVisitDateGB" onchange="render()">
+    </div>
+  </div>
+  <div class="fg" style="margin-top:0;">
+    <div class="lbl">타병원 치료</div>
+    <input type="text" id="otherHospitalGB" placeholder="없으면 비워두세요 (기본: x)" style="width:100%" oninput="render()">
+  </div>
+</div>
+
+<!-- C/C -->
+<div class="card">
+  <div class="card-title">C / C &nbsp;<span style="color:var(--text3);font-size:9px;font-family:'IBM Plex Mono',monospace;">주소증</span></div>
+  <div id="ccList">
+    <!-- 근골격계 구분 (GB에서만 표시) -->
+    <div class="gb-cc-block" style="margin:0 0 10px;font-size:10px;font-weight:700;color:var(--accent);font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;">근골격계</div>
+
+    <div class="cc-item" data-key="경항부">
+      <div class="cc-header" onclick="toggleCC(this,'경항부')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">경항부</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 통증, 저림" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="요배부">
+      <div class="cc-header" onclick="toggleCC(this,'요배부')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">요배부</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 통증, 운동제한" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="흉복부">
+      <div class="cc-header" onclick="toggleCC(this,'흉복부')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">흉복부</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 흉통, 복부 불편감" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="상지부">
+      <div class="cc-header" onclick="toggleCC(this,'상지부')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">상지부</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 어깨 통증, 팔 저림" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="하지부">
+      <div class="cc-header" onclick="toggleCC(this,'하지부')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">하지부</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 무릎 통증, 발 저림" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+
+    <!-- 내과계 (자보·건보 공통) -->
+    <div style="margin:14px 0 10px;font-size:10px;font-weight:700;color:var(--orange);font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;">내과계</div>
+
+    <div class="cc-item" data-key="두통·어지러움">
+      <div class="cc-header" onclick="toggleCC(this,'두통·어지러움')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">두통 · 어지러움</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 두통, 어지러움" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="소화기질환">
+      <div class="cc-header" onclick="toggleCC(this,'소화기질환')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">소화기 질환</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 소화불량, 복부팽만" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="부인과질환">
+      <div class="cc-header" onclick="toggleCC(this,'부인과질환')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">부인과 질환</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 월경통, 월경불순" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="비뇨생식계질환">
+      <div class="cc-header" onclick="toggleCC(this,'비뇨생식계질환')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">비뇨생식계 질환</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 빈뇨, 야간뇨, 부종" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="대사성질환">
+      <div class="cc-header" onclick="toggleCC(this,'대사성질환')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">대사성 질환</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 피로, 전신권태, 비만" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+    <div class="cc-item" data-key="신경성질환">
+      <div class="cc-header" onclick="toggleCC(this,'신경성질환')">
+        <div class="cc-check"><span class="cc-check-mark">✓</span></div>
+        <span class="cc-label">신경성 질환</span>
+        <span class="cc-edit-btn" onclick="editCCLabel(event,this)">✎ 수정</span>
+      </div>
+      <div class="cc-detail">
+        <input type="text" placeholder="예) 불면, 불안, 심계항진" oninput="render()">
+        <input type="text" class="cc-onset" placeholder="온셋 (예: 3일 전, chronic)" oninput="render()" style="margin-top:5px;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- XR -->
+<div class="card">
+  <div class="card-title">XR 촬영 부위</div>
+  <!-- 추후촬영 체크박스 -->
+  <div style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:14px;user-select:none;" onclick="toggleXrLater()">
+    <span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:2px solid var(--border);background:var(--surface2);flex-shrink:0;transition:all .15s;" id="xrLaterBox">
+      <span style="color:#fff;font-size:12px;font-weight:700;display:none;" id="xrLaterCheck">✓</span>
+    </span>
+    <span style="font-size:13px;font-weight:600;color:var(--text2);">추후 촬영</span>
+    <span style="font-size:11px;color:var(--text3);">(부위는 계속 선택 가능)</span>
+  </div>
+  <!-- XR 미시행 체크박스 -->
+  <div style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:14px;user-select:none;" onclick="toggleXrNone()">
+    <span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:2px solid var(--border);background:var(--surface2);flex-shrink:0;transition:all .15s;" id="xrNoneBox">
+      <span style="color:#fff;font-size:12px;font-weight:700;display:none;" id="xrNoneCheck">✓</span>
+    </span>
+    <span style="font-size:13px;font-weight:600;color:var(--text2);">촬영 안 함</span>
+    <span style="font-size:11px;color:var(--text3);">(XR 미시행)</span>
+  </div>
+  <div class="xr-grid" id="xrGrid">
+    <div class="xr-chip" data-key="C-spine" data-bi="0" onclick="handleXR(this)">목 (C-spine)</div>
+    <div class="xr-chip" data-key="L-spine" data-bi="0" onclick="handleXR(this)">허리 (L-spine)</div>
+    <div class="xr-chip" data-key="Pelvis"  data-bi="0" onclick="handleXR(this)">골반 (Pelvis)</div>
+    <div class="xr-chip" data-key="Shoulder" data-bi="1" onclick="handleXR(this)">어깨 (Shoulder) <span class="bi-arrow">▼</span></div>
+    <div class="xr-chip" data-key="Elbow"   data-bi="1" onclick="handleXR(this)">팔꿈치 (Elbow) <span class="bi-arrow">▼</span></div>
+    <div class="xr-chip" data-key="Wrist"   data-bi="1" onclick="handleXR(this)">손목 (Wrist) <span class="bi-arrow">▼</span></div>
+    <div class="xr-chip" data-key="Knee"    data-bi="1" onclick="handleXR(this)">무릎 (Knee) <span class="bi-arrow">▼</span></div>
+    <div class="xr-chip" data-key="Ankle"   data-bi="1" onclick="handleXR(this)">발목 (Ankle) <span class="bi-arrow">▼</span></div>
+    <div class="xr-chip" data-key="Rib"     data-bi="1" onclick="handleXR(this)">늑골 (Rib) <span class="bi-arrow">▼</span></div>
+    <div class="xr-chip locked" id="chestChip">Chest PA (입원 자동)</div>
+  </div>
+  <!-- XR 직접입력 -->
+  <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+    <input type="text" id="xrCustomInput" placeholder="직접 입력 (예: T-spine)" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;outline:none;" oninput="render()">
+  </div>
+</div>
+
+<!-- 액팅 -->
+<div class="card" id="actingCard">
+  <div class="card-title">액팅 내용</div>
+  <div class="chip-row">
+    <div class="act-chip gb-only-inline" data-val="침"   onclick="toggleAct(this)">침</div>
+    <div class="act-chip gb-only-inline" data-val="부항" onclick="toggleAct(this)">부항</div>
+    <div class="act-chip ta-only-inline" data-val="침치료만" onclick="toggleAct(this)">침치료만</div>
+    <div class="act-chip" data-val="약침"  onclick="toggleAct(this)">약침</div>
+    <div class="act-chip" data-val="추나"  onclick="toggleAct(this)">추나</div>
+    <div class="act-chip" data-val="스티커침" onclick="toggleAct(this)">스티커침</div>
+    <div class="act-chip" data-val="첩약"  onclick="toggleCheopYakUnified(this)">첩약</div>
+  </div>
+</div>
+
+<!-- 변증 선택 -->
+<div class="card" id="byeonjeungCard" style="display:none;">
+  <div class="card-title">변증 선택 &nbsp;<span style="color:var(--text3);font-size:9px;font-family:'IBM Plex Mono',monospace;">(망진·절진 자동 입력)</span></div>
+  <div class="ta-only" style="margin-bottom:12px;padding:8px 12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:11px;color:var(--yellow);">⚠ 자보 — 첩약 미선택 시에만 사용하세요. 첩약 선택 시 처방군 기반으로 자동 입력됩니다.</div>
+  <select id="bjSelect" onchange="render()">
+    <option value="">— 선택 안 함 —</option>
+    <optgroup label="육음병증(六淫病證)">
+      <option value="풍한증">풍한증 (U50.0)</option>
+      <option value="풍열증">풍열증 (U50.1)</option>
+      <option value="풍습증">풍습증 (U50.2)</option>
+      <option value="한습증">한습증 (U50.3)</option>
+      <option value="습열증">습열증 (U50.4)</option>
+      <option value="양조증">양조증 (U50.5)</option>
+      <option value="온조증">온조증 (U50.6)</option>
+      <option value="열독치성증">열독치성증 (U50.7)</option>
+      <option value="서열상기증">서열상기증 (U50.8)</option>
+    </optgroup>
+    <optgroup label="육경병증(六經病證)">
+      <option value="태양병증">태양병증 (U52)</option>
+      <option value="양명병증">양명병증 (U53)</option>
+      <option value="소양병증">소양병증 (U54)</option>
+      <option value="태음병증">태음병증 (U55)</option>
+      <option value="소음병증">소음병증 (U56)</option>
+      <option value="궐음병증">궐음병증 (U57)</option>
+    </optgroup>
+    <optgroup label="삼초·위기영혈병증">
+      <option value="상초증">상초증 (U59.0)</option>
+      <option value="중초증">중초증 (U59.1)</option>
+      <option value="하초증">하초증 (U59.2)</option>
+      <option value="위분증">위분증 (U59.4)</option>
+      <option value="기분증">기분증 (U59.5)</option>
+      <option value="영분증">영분증 (U59.6)</option>
+      <option value="혈분증">혈분증 (U59.7)</option>
+    </optgroup>
+    <optgroup label="기병증(氣病證)">
+      <option value="기허증">기허증 (U60.0)</option>
+      <option value="기체증">기체증 (U60.3)</option>
+      <option value="기역증">기역증 (U60.4)</option>
+    </optgroup>
+    <optgroup label="혈병증(血病證)">
+      <option value="혈허증">혈허증 (U61.0)</option>
+      <option value="혈어증">혈어증 (U61.2)</option>
+      <option value="혈조증">혈조증 (U61.3)</option>
+      <option value="혈한증">혈한증 (U61.4)</option>
+      <option value="혈열증">혈열증 (U61.5)</option>
+    </optgroup>
+    <optgroup label="기혈음양병증">
+      <option value="음허증">음허증 (U62.0)</option>
+      <option value="양허증">양허증 (U62.1)</option>
+      <option value="망음증">망음증 (U62.2)</option>
+      <option value="망양증">망양증 (U62.3)</option>
+      <option value="기혈양허증">기혈양허증 (U62.4)</option>
+      <option value="음양양허증">음양양허증 (U62.5)</option>
+      <option value="기음양허증">기음양허증 (U62.6)</option>
+    </optgroup>
+    <optgroup label="진액병증(津液病證)">
+      <option value="진액휴손증">진액휴손증 (U63.0)</option>
+      <option value="수음내정증">수음내정증 (U63.1)</option>
+      <option value="수습범람증">수습범람증 (U63.2)</option>
+    </optgroup>
+    <optgroup label="간허증(肝虛證)">
+      <option value="간혈허증">간혈허증 (U64.0)</option>
+      <option value="간음허증">간음허증 (U64.1)</option>
+      <option value="간양허증">간양허증 (U64.2)</option>
+      <option value="간기허증">간기허증 (U64.3)</option>
+    </optgroup>
+    <optgroup label="간실증(肝實證)">
+      <option value="간양상항증">간양상항증 (U65.0)</option>
+      <option value="간기울결증">간기울결증 (U65.1)</option>
+      <option value="간화상염증">간화상염증 (U65.2)</option>
+      <option value="간울혈어증">간울혈어증 (U65.6)</option>
+      <option value="한체간맥증">한체간맥증 (U65.7)</option>
+      <option value="간경습열증">간경습열증 (U65.8)</option>
+    </optgroup>
+    <optgroup label="심허증(心虛證)">
+      <option value="심기허증">심기허증 (U66.0)</option>
+      <option value="심혈허증">심혈허증 (U66.1)</option>
+      <option value="심음허증">심음허증 (U66.2)</option>
+      <option value="심양허증">심양허증 (U66.3)</option>
+      <option value="심기혈양허증">심기혈양허증 (U66.5)</option>
+      <option value="심기음양허증">심기음양허증 (U66.6)</option>
+    </optgroup>
+    <optgroup label="심실증(心實證)">
+      <option value="심화상염증">심화상염증 (U67.0)</option>
+      <option value="심맥비조증">심맥비조증 (U67.1)</option>
+      <option value="담화요심증">담화요심증 (U67.2)</option>
+      <option value="수기능심증">수기능심증 (U67.3)</option>
+      <option value="담미심규증">담미심규증 (U67.4)</option>
+    </optgroup>
+    <optgroup label="비병증(脾病證)">
+      <option value="비기허증">비기허증 (U68.0)</option>
+      <option value="중기하함증">중기하함증 (U68.1)</option>
+      <option value="비불통혈증">비불통혈증 (U68.2)</option>
+      <option value="비음허증">비음허증 (U68.3)</option>
+      <option value="비양허증">비양허증 (U68.4)</option>
+      <option value="한습곤비증">한습곤비증 (U68.5)</option>
+      <option value="습열상비증">습열상비증 (U68.6)</option>
+    </optgroup>
+    <optgroup label="폐허증(肺虛證)">
+      <option value="폐기허증">폐기허증 (U69.0)</option>
+      <option value="폐음허증">폐음허증 (U69.1)</option>
+      <option value="폐양허증">폐양허증 (U69.2)</option>
+      <option value="폐기음양허증">폐기음양허증 (U69.3)</option>
+    </optgroup>
+    <optgroup label="폐실증(肺實證)">
+      <option value="풍한속폐증">풍한속폐증 (U70.0)</option>
+      <option value="풍열범폐증">풍열범폐증 (U70.1)</option>
+      <option value="조사범폐증">조사범폐증 (U70.2)</option>
+      <option value="한담조폐증">한담조폐증 (U70.3)</option>
+      <option value="담열옹폐증">담열옹폐증 (U70.4)</option>
+    </optgroup>
+    <optgroup label="신병증(腎病證)">
+      <option value="신기허증">신기허증 (U71.0)</option>
+      <option value="신음허증">신음허증 (U71.4)</option>
+      <option value="신양허증">신양허증 (U71.5)</option>
+      <option value="신허수범증">신허수범증 (U71.7)</option>
+    </optgroup>
+    <optgroup label="담병증(膽病證)">
+      <option value="담기허증">담기허증 (U72.0)</option>
+      <option value="담열증">담열증 (U72.2)</option>
+    </optgroup>
+    <optgroup label="위병증(胃病證)">
+      <option value="위기허증">위기허증 (U73.0)</option>
+      <option value="위음허증">위음허증 (U73.1)</option>
+      <option value="위열증">위열증 (U73.3)</option>
+      <option value="위기상역증">위기상역증 (U73.4)</option>
+    </optgroup>
+    <optgroup label="대장병증(大腸病證)">
+      <option value="대장진휴증">대장진휴증 (U74.0)</option>
+      <option value="대장허한증">대장허한증 (U74.1)</option>
+      <option value="대장습열증">대장습열증 (U74.2)</option>
+      <option value="대장실열증">대장실열증 (U74.3)</option>
+    </optgroup>
+    <optgroup label="소장병증(小腸病證)">
+      <option value="소장허한증">소장허한증 (U75.0)</option>
+      <option value="소장기체증">소장기체증 (U75.1)</option>
+      <option value="소장실열증">소장실열증 (U75.2)</option>
+    </optgroup>
+    <optgroup label="방광병증(膀胱病證)">
+      <option value="방광허한증">방광허한증 (U76.0)</option>
+      <option value="방광습열증">방광습열증 (U76.1)</option>
+    </optgroup>
+    <optgroup label="충임포궁병증">
+      <option value="충임허쇠증">충임허쇠증 (U77.0)</option>
+      <option value="충임허한증">충임허한증 (U77.2)</option>
+      <option value="충임열증">충임열증 (U77.3)</option>
+      <option value="충임어조증">충임어조증 (U77.4)</option>
+    </optgroup>
+    <optgroup label="장부겸병증(臟腑兼病證)">
+      <option value="간담습열증">간담습열증 (U78.0)</option>
+      <option value="간비불화증">간비불화증 (U78.1)</option>
+      <option value="간위불화증">간위불화증 (U78.2)</option>
+      <option value="간화범폐증">간화범폐증 (U78.3)</option>
+      <option value="간신음허증">간신음허증 (U78.4)</option>
+      <option value="심간혈허증">심간혈허증 (U78.5)</option>
+      <option value="심담허겁증">심담허겁증 (U78.6)</option>
+      <option value="심비양허증">심비양허증 (U78.7)</option>
+      <option value="심폐기허증">심폐기허증 (U78.8)</option>
+      <option value="심신양허증">심신양허증 (U78.9)</option>
+      <option value="심신불교증">심신불교증 (U79.0)</option>
+      <option value="비위양허증">비위양허증 (U79.1)</option>
+      <option value="비위습열증">비위습열증 (U79.2)</option>
+      <option value="식상비위증">식상비위증 (U79.3)</option>
+      <option value="비신양허증">비신양허증 (U79.4)</option>
+      <option value="폐비양허증">폐비양허증 (U79.5)</option>
+      <option value="폐신음허증">폐신음허증 (U79.6)</option>
+    </optgroup>
+  </select>
+</div>
+
+<!-- 물리치료 통원 -->
+<div class="card" id="ptOutpatient">
+  <div class="card-title">물리치료 계획 <span style="color:var(--teal);font-size:9px;">(통원)</span></div>
+  <div class="section-label" style="margin-top:0;">ICT 부위 수</div>
+  <div class="ict-toggle">
+    <div class="ict-btn" id="ict-out-1" onclick="setIctOut(1)">1부위</div>
+    <div class="ict-btn" id="ict-out-2" onclick="setIctOut(2)">2부위</div>
+  </div>
+  <div class="section-label">ICT 부위 선택 <span id="outCountHint" style="color:var(--text3);font-size:10px;font-weight:400;"></span></div>
+  <div class="body-chips" id="outBodyChips">
+    <div class="body-chip" data-key="경추부" data-bi="0" onclick="handlePTBody(this,'out')">경추부</div>
+    <div class="body-chip" data-key="흉추부" data-bi="0" onclick="handlePTBody(this,'out')">흉추부</div>
+    <div class="body-chip" data-key="요추부" data-bi="0" onclick="handlePTBody(this,'out')">요추부</div>
+    <div class="body-chip" data-key="견관절" data-bi="1" onclick="handlePTBody(this,'out')">견관절 <span class="bi-arrow">▼</span></div>
+    <div class="body-chip" data-key="주관절" data-bi="1" onclick="handlePTBody(this,'out')">주관절 <span class="bi-arrow">▼</span></div>
+    <div class="body-chip" data-key="수관절" data-bi="1" onclick="handlePTBody(this,'out')">수관절 <span class="bi-arrow">▼</span></div>
+    <div class="body-chip" data-key="고관절" data-bi="1" onclick="handlePTBody(this,'out')">고관절 <span class="bi-arrow">▼</span></div>
+    <div class="body-chip" data-key="슬관절" data-bi="1" onclick="handlePTBody(this,'out')">슬관절 <span class="bi-arrow">▼</span></div>
+    <div class="body-chip" data-key="족관절" data-bi="1" onclick="handlePTBody(this,'out')">족관절 <span class="bi-arrow">▼</span></div>
+    <div class="body-chip" data-key="늑골부" data-bi="1" onclick="handlePTBody(this,'out')">늑골부 <span class="bi-arrow">▼</span></div>
+  </div>
+  <div style="margin-top:10px;">
+    <input type="text" id="ictOutCustom" placeholder="직접 입력 (예: 족저부)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;outline:none;" oninput="render()">
+  </div>
+</div>
+
+<!-- 물리치료 입원 -->
+<div class="card" id="ptInpatient">
+  <div class="card-title">물리치료 계획 <span style="color:var(--orange);font-size:9px;">(입원)</span></div>
+  <div class="pt-block">
+    <div class="pt-block-title">🌅 오전 — ICT 1부위</div>
+    <div class="body-chips" id="inBodyAM">
+      <div class="body-chip" data-key="경추부" data-bi="0" onclick="handlePTBody(this,'am')">경추부</div>
+      <div class="body-chip" data-key="흉추부" data-bi="0" onclick="handlePTBody(this,'am')">흉추부</div>
+      <div class="body-chip" data-key="요추부" data-bi="0" onclick="handlePTBody(this,'am')">요추부</div>
+      <div class="body-chip" data-key="견관절" data-bi="1" onclick="handlePTBody(this,'am')">견관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="주관절" data-bi="1" onclick="handlePTBody(this,'am')">주관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="수관절" data-bi="1" onclick="handlePTBody(this,'am')">수관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="고관절" data-bi="1" onclick="handlePTBody(this,'am')">고관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="슬관절" data-bi="1" onclick="handlePTBody(this,'am')">슬관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="족관절" data-bi="1" onclick="handlePTBody(this,'am')">족관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="늑골부" data-bi="1" onclick="handlePTBody(this,'am')">늑골부 <span class="bi-arrow">▼</span></div>
+    </div>
+    <div style="margin-top:10px;">
+      <input type="text" id="ictAmCustom" placeholder="직접 입력 (예: 족저부)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;outline:none;" oninput="render()">
+    </div>
+  </div>
+  <div class="pt-block">
+    <div class="pt-block-title">🌇 오후 — ICT 1부위</div>
+    <div class="body-chips" id="inBodyPM">
+      <div class="body-chip" data-key="경추부" data-bi="0" onclick="handlePTBody(this,'pm')">경추부</div>
+      <div class="body-chip" data-key="흉추부" data-bi="0" onclick="handlePTBody(this,'pm')">흉추부</div>
+      <div class="body-chip" data-key="요추부" data-bi="0" onclick="handlePTBody(this,'pm')">요추부</div>
+      <div class="body-chip" data-key="견관절" data-bi="1" onclick="handlePTBody(this,'pm')">견관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="주관절" data-bi="1" onclick="handlePTBody(this,'pm')">주관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="수관절" data-bi="1" onclick="handlePTBody(this,'pm')">수관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="고관절" data-bi="1" onclick="handlePTBody(this,'pm')">고관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="슬관절" data-bi="1" onclick="handlePTBody(this,'pm')">슬관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="족관절" data-bi="1" onclick="handlePTBody(this,'pm')">족관절 <span class="bi-arrow">▼</span></div>
+      <div class="body-chip" data-key="늑골부" data-bi="1" onclick="handlePTBody(this,'pm')">늑골부 <span class="bi-arrow">▼</span></div>
+    </div>
+    <div style="margin-top:10px;">
+      <input type="text" id="ictPmCustom" placeholder="직접 입력 (예: 족저부)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;outline:none;" oninput="render()">
+    </div>
+  </div>
+  <!-- 2차치료 시간 옵션 -->
+  <div style="margin-top:4px;">
+    <div class="section-label" style="margin-top:0;margin-bottom:8px;">2차 치료 일정</div>
+    <div class="chip-row" id="tx2Row">
+      <div class="act-chip" id="tx2-none"   onclick="setTx2('none')"  >1차만 진행</div>
+      <div class="act-chip" id="tx2-time"   onclick="setTx2('time')"  >시간 지정</div>
+      <div class="act-chip" id="tx2-consec" onclick="setTx2('consec')">연달아 진행</div>
+    </div>
+    <!-- 시간 칩 + 직접입력 -->
+    <div id="tx2TimeBox" style="display:none;margin-top:10px;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace;" id="tx2DayLabel"></span>
+        <div id="tx2HolidayWrap" style="display:none;align-items:center;gap:6px;cursor:pointer;" onclick="toggleTx2Holiday()">
+          <span style="display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;border:2px solid var(--border);background:var(--surface2);flex-shrink:0;transition:all .15s;" id="tx2HolidayBox">
+            <span style="color:#fff;font-size:10px;font-weight:700;display:none;" id="tx2HolidayCheck">✓</span>
+          </span>
+          <span style="font-size:11px;color:var(--text3);">공휴일</span>
+        </div>
+      </div>
+      <div class="chip-row" id="tx2TimeChips"></div>
+      <input type="text" id="tx2TimeInput" placeholder="직접 입력 (예: 오후 4시 30분)" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:13px;outline:none;" oninput="onTx2DirectInput()">
+    </div>
+  </div>
+</div>
+
+<!-- 입원기한 -->
+<div class="card" id="admitCard">
+  <!-- TA 모드 -->
+  <div class="ta-only">
+    <div class="card-title">입원 기한 자동 계산</div>
+    <div class="chip-row" style="margin-bottom:14px;">
+      <div class="act-chip active" id="ta-dl-mild" onclick="setTaDeadlineMode('mild')">경상 (1주)</div>
+      <div class="act-chip" id="ta-dl-fx" onclick="setTaDeadlineMode('fracture')">골절</div>
+    </div>
+    <div id="ta-dl-fracture-box" style="display:none;margin-bottom:14px;">
+      <div class="lbl" style="margin-bottom:8px;">골절 부위 선택</div>
+      <div class="chip-row" id="fxPartGrid" style="margin-bottom:10px;">
+        <div class="act-chip" data-fx="경추부" onclick="selectFxPart(this)">경추</div>
+        <div class="act-chip" data-fx="흉추부" onclick="selectFxPart(this)">흉추</div>
+        <div class="act-chip" data-fx="요추부" onclick="selectFxPart(this)">요추</div>
+        <div class="act-chip" data-fx="골반" onclick="selectFxPart(this)">골반</div>
+        <div class="act-chip" data-fx="견관절" onclick="selectFxPart(this)">견관절</div>
+        <div class="act-chip" data-fx="주관절" onclick="selectFxPart(this)">주관절</div>
+        <div class="act-chip" data-fx="수관절" onclick="selectFxPart(this)">수관절</div>
+        <div class="act-chip" data-fx="슬관절" onclick="selectFxPart(this)">슬관절</div>
+        <div class="act-chip" data-fx="족관절" onclick="selectFxPart(this)">족관절</div>
+        <div class="act-chip" data-fx="늑골" onclick="selectFxPart(this)">늑골</div>
+      </div>
+      <div id="fxSubGrid" class="chip-row" style="display:none;margin-bottom:10px;"></div>
+      <div id="fxSeverityGrid" class="chip-row" style="display:none;margin-bottom:10px;"></div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;">전치기준.pdf 기준 — 경도 / 중등도 / 고도 중 임상 판단에 맞는 값을 선택하세요.<br>※ [탈구] 표시 항목은 골절이 아닌 탈구(DISLOCATION) 표의 값입니다.<br><span style="color:var(--red);font-weight:700;">⚠ 반드시 전치기준 원본 파일과 대조하세요.</span></div>
+    </div>
+    <div class="deadline-box">
+      <span class="dl-val" id="dlVal">수상일을 입력하세요</span>
+      <span class="dl-hint" id="dlHint">수상일 기준 7일째</span>
+    </div>
+  </div>
+  <!-- 건보 모드 -->
+  <div class="gb-only">
+    <div class="card-title">입원 기한</div>
+    <div class="chip-row" style="margin-bottom:14px;">
+      <div class="act-chip active" id="dl-auto" onclick="setGbDeadlineMode('auto')">2주 자동</div>
+      <div class="act-chip" id="dl-pick" onclick="setGbDeadlineMode('pick')">날짜 직접 선택</div>
+      <div class="act-chip" id="dl-later" onclick="setGbDeadlineMode('later')">추후 지정</div>
+    </div>
+    <div id="dl-auto-box" style="display:block;">
+      <div class="deadline-box">
+        <span class="dl-val" id="dlAutoVal">초진일을 입력하세요</span>
+        <span class="dl-hint">입원일(초진일) 기준 2주</span>
+      </div>
+    </div>
+    <div id="dl-pick-box" style="display:none;">
+      <input type="date" id="gbDeadlinePick" onchange="render()" style="background:var(--surface2);border:1px solid var(--green);border-radius:8px;padding:10px 13px;color:var(--green);font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;outline:none;color-scheme:dark;">
+    </div>
+    <div id="dl-later-box" style="display:none;">
+      <span class="dl-val" style="color:var(--yellow);border-color:var(--yellow);">추후 지정</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">특이사항</div>
+  <input type="text" id="specialNote" placeholder="없으면 비워두세요 (기본: x)" style="width:100%;margin-bottom:10px;" oninput="render()">
+  <div class="lbl" style="margin-bottom:6px;">P / H</div>
+  <input type="text" id="phNote" placeholder="없으면 비워두세요 (기본: X)" style="width:100%" oninput="render()">
+</div>
+
+<div class="card" id="dongsunCard">
+  <div class="card-title">치료동선 &nbsp;<span style="color:var(--text3);font-size:9px;font-family:'IBM Plex Mono',monospace;">(드래그해서 순서 변경)</span></div>
+  <div id="dongsunList" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;"></div>
+  <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="font-size:11px;color:var(--text3);">칩을 드래그해서 순서를 바꾸세요. (예: 추나를 치료 뒤로 옮기기)</div>
+    <button onclick="resetDongsunOrder()" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:5px 12px;color:var(--text3);font-size:11px;font-family:'Noto Sans KR',sans-serif;cursor:pointer;white-space:nowrap;margin-left:10px;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">↺ 기본 순서</button>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="output-wrap">
+  <div class="out-label">📋 치료 플랜</div>
+  <div id="outputText" style="color:var(--text3);">이름과 정보를 입력하면 자동으로 생성됩니다.</div>
+</div>
+<button class="btn-copy" onclick="copyChart()">치료플랜 복사</button>
+
+<div style="height:12px"></div>
+
+<div class="output-wrap">
+  <div class="out-label" style="color:var(--green);">🗒️ 환자 차트</div>
+  <div id="chartText" style="color:var(--text3);">이름과 정보를 입력하면 자동으로 생성됩니다.</div>
+</div>
+<button class="btn-copy" id="btnChart" style="background:var(--green);margin-top:10px;" onclick="copyChartNote()">환자차트 복사</button>
+
+<div style="height:12px"></div>
+
+<div class="output-wrap">
+  <div class="out-label" style="color:var(--accent);">🗒️ 메모</div>
+  <div id="memoText" style="color:var(--text3);">이름과 정보를 입력하면 자동으로 생성됩니다.</div>
+</div>
+<button class="btn-copy" id="btnMemo" style="background:var(--accent);margin-top:10px;" onclick="copyMemo()">메모 복사</button>
+
+<!-- XR 팝업 -->
+<div class="overlay xr-pop" id="xrOverlay" onclick="xrOC(event)">
+  <div class="popup">
+    <div class="popup-title" id="xrPopTitle">부위 선택</div>
+    <div class="popup-sub">좌 / 우 / 양쪽 중 선택하세요</div>
+    <div class="popup-opts">
+      <div class="pop-btn" data-side="Lt"   onclick="xrSS(this)">왼쪽<span class="pop-side">Lt</span></div>
+      <div class="pop-btn" data-side="Rt"   onclick="xrSS(this)">오른쪽<span class="pop-side">Rt</span></div>
+      <div class="pop-btn" data-side="Both" onclick="xrSS(this)">양쪽<span class="pop-side">Both</span></div>
+    </div>
+    <div class="popup-actions">
+      <button class="pop-cancel" onclick="xrCP()">취소</button>
+      <button class="pop-confirm" onclick="xrCF()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- PT 팝업 -->
+<div class="overlay pt-pop" id="ptOverlay" onclick="ptOC(event)">
+  <div class="popup">
+    <div class="popup-title" id="ptPopTitle">부위 선택</div>
+    <div class="popup-sub">좌 / 우 / 양쪽 중 선택하세요<br><span style="font-size:11px;color:var(--teal);">※ 양쪽 선택 시 1부위로 계산</span></div>
+    <div class="popup-opts">
+      <div class="pop-btn" data-side="Lt"   onclick="ptSS(this)">왼쪽<span class="pop-side">Lt</span></div>
+      <div class="pop-btn" data-side="Rt"   onclick="ptSS(this)">오른쪽<span class="pop-side">Rt</span></div>
+      <div class="pop-btn" data-side="Both" onclick="ptSS(this)">양쪽<span class="pop-side">Both</span></div>
+    </div>
+    <div class="popup-actions">
+      <button class="pop-cancel" onclick="ptCP()">취소</button>
+      <button class="pop-confirm" onclick="ptCF()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROM 팝업 -->
+<div class="overlay" id="romOverlay" onclick="romOC(event)">
+  <div class="popup rom-popup">
+    <div class="popup-title" id="romPopTitle">ROM</div>
+    <div class="popup-sub" style="margin-bottom:14px;">측정한 동작을 체크하고 각도를 입력하세요<br><span style="font-size:10px;">정상범위: AAOS 기준 · 정상보다 작으면 빨간색 표시</span></div>
+    <div id="romBody"></div>
+    <div class="popup-actions" style="margin-top:14px;">
+      <button class="pop-cancel" onclick="romClear()" style="flex:0.8;">전체 지우기</button>
+      <button class="pop-cancel" onclick="romCP()">취소</button>
+      <button class="pop-confirm" onclick="romCF()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 이학적검사 팝업 -->
+<div class="overlay" id="peOverlay" onclick="peOC(event)">
+  <div class="popup rom-popup">
+    <div class="popup-title" id="pePopTitle">이학적검사</div>
+    <div class="popup-sub" style="margin-bottom:14px;">시행한 검사를 체크하고 결과를 선택하세요<br><span style="font-size:10px;">같은 결과를 다시 누르면 해제 · 각도는 필요할 때만 입력</span></div>
+    <div id="peBody"></div>
+    <div class="popup-actions" style="margin-top:14px;">
+      <button class="pop-cancel" onclick="peClear()" style="flex:0.8;">전체 지우기</button>
+      <button class="pop-cancel" onclick="peCP()">취소</button>
+      <button class="pop-confirm" onclick="peCF()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 한약 팝업 -->
+<div class="herb-overlay" id="herbOverlay" onclick="herbOC(event)">
+  <div class="herb-popup">
+    <div class="herb-popup-title">📋 첩약 처방 선택</div>
+    <!-- Step 1: 처방 선택 -->
+    <div class="herb-step active" id="herbStep1">
+      <div id="herbRxList"></div>
+      <div class="herb-pop-actions">
+        <button class="herb-cancel" onclick="herbClose()">취소</button>
+        <button class="herb-cancel" onclick="herbConfirmLater()" style="background:var(--surface2);color:var(--yellow);border:1px solid var(--yellow);">추후선택</button>
+        <button class="herb-confirm" id="herbStep1Next" onclick="herbGoStep2()" disabled>다음 →</button>
+      </div>
+    </div>
+    <!-- Step 2: 가감 선택 -->
+    <div class="herb-step" id="herbStep2">
+      <div class="herb-sel-info" id="herbSelInfo"></div>
+      <div id="herbAddList"></div>
+      <div class="herb-pop-actions">
+        <button class="herb-back" onclick="herbGoStep1()">← 뒤로</button>
+        <button class="herb-cancel" onclick="herbClose()">취소</button>
+        <button class="herb-confirm" id="herbStep2Confirm" onclick="herbConfirm()" disabled>완료</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// ══ 상태 ══
+let chartMode='ta'; // 'ta' | 'gb'
+let isTA=false,isGB=false,pType='',seatSelected=null;
+let gbDeadlineMode='auto'; // 'auto' | 'pick' | 'later'
+const xrState={};
+let xrPK=null,xrPS=null;
+let xrLater=false; // 추후촬영 여부
+let xrNone=false; // XR 미시행 여부
+let ictOutCount=0;
+const ptState={out:{},am:{},pm:{}};
+let ptPS=null,ptPK=null,ptPSide=null,ptPEl=null;
+let tx2Mode='consec'; // 'none'|'time'|'consec' — 기본값 연달아
+let tx2Holiday=false; // 평일 공휴일 여부
+
+// ── 자보 입원기한: 경상/골절 ──
+let taDeadlineMode='mild'; // 'mild' | 'fracture'
+let taFxPart=null;
+let taFxSub=null;
+let taFxWeeks=null;
+
+// 전치기준.pdf 기준 — 부위 > 세부유형 > [경도,중등도,고도] (단위: 주)
+// ※ 원본 표의 값 배열 순서는 경도/중등도/고도/종결/재취업 이며, 앞 3개만 사용
+const FRACTURE_DATA={
+  '경추부':{
+    '치아돌기(치상돌기)':[6,10,12],
+    '중쇠뼈고리(축추궁)':[6,10,12],
+    '몸통 압박골절':[8,12,14],
+    '몸통 분쇄골절':[12,14,16],
+    '몸통 조각골절':[4,6,8],
+    '고리뿌리(척추경)':[8,10,12],
+    '고리판(추궁판)':[8,10,12],
+    '가시돌기(극돌기)':[4,6,8],
+    '가로돌기(횡돌기)':[6,8,20],
+  },
+  '흉추부':{
+    '몸통 압박골절':[8,12,14],
+    '몸통 분쇄골절':[12,14,16],
+    '몸통 조각골절':[4,6,8],
+    '고리뿌리(척추경)':[8,10,12],
+    '고리판(추궁판)':[8,10,12],
+    '가시돌기(극돌기)':[4,6,8],
+    '가로돌기(횡돌기)':[4,6,8],
+  },
+  '요추부':{
+    '몸통 압박골절':[8,12,14],
+    '몸통 분쇄골절':[12,14,16],
+    '몸통 조각골절':[4,6,8],
+    '고리뿌리(척추경)':[8,10,12],
+    '고리판(추궁판)':[8,10,12],
+    '가시돌기(극돌기)':[4,6,8],
+    '가로돌기(횡돌기)':[4,6,8],
+  },
+  '골반':{
+    '엉덩뼈(장골)':[6,7,8],
+    '두덩뼈(치골)':[6,7,8],
+    '궁둥뼈(좌골)':[6,7,8],
+    '두덩환(골반환)':[11,12,14],
+    '절구(관골구)':[12,13,14],
+    '엉덩뼈가시 떼임(ASIS/AIIS)':[3,4,5],
+    '엉치뼈(천추)':[4,6,8],
+    '꼬리뼈(미추)':[3,4,5],
+    '두덩결합분리(치골간분리)':[4,8,10],
+    '엉치엉덩관절분리(천장관절)':[6,8,10],
+  },
+  '견관절':{
+    '빗장뼈(쇄골)':[6,7,8],
+    '어깨뼈 목(견갑골 경부)':[5,6,7],
+    '어깨뼈 몸통·가시돌기':[3,6,7],
+    '관절오목(관절와)':[4,6,8],
+    '봉우리(견봉)':[4,5,6],
+    '부리돌기(오구돌기)':[4,5,6],
+    '상완골 근위부(경부)':[5,7,8],
+    '상완골 몸통(간부)':[9,10,11],
+    '상완골 원위부':[8,9,10],
+    '[탈구] 어깨관절':[4,6,8],
+    '[탈구] 봉우리빗장관절':[3,6,8],
+    '[탈구] 복장빗장관절':[3,6,8],
+  },
+  '주관절':{
+    '팔꿈치머리(주두)':[6,7,8],
+    '갈고리돌기(구상돌기)':[4,5,6],
+    '노뼈머리 및 목(요골두·경부)':[4,5,6],
+    '[탈구] 팔꿉관절':[4,5,6],
+    '[탈구] 노뼈머리(요골두)':[4,5,6],
+  },
+  '수관절':{
+    '요골 아래끝(원위부)':[6,7,8],
+    '요골·척골 아래끝':[8,9,10],
+    '척골 붓돌기(경상돌기)':[3,4,5],
+    '요골 몸통(간부)':[8,9,10],
+    '척골 몸통(간부)':[7,9,10],
+    '요골+척골 몸통':[10,12,14],
+    '손배뼈(주상골)':[10,12,14],
+    '반달뼈(월상골)':[4,6,7],
+    '기타 손목뼈(수근골)':[4,6,7],
+    '손허리뼈(중수골)':[5,6,7],
+    '손가락뼈(수지골)':[4,5,6],
+    '망치손가락(추지)':[5,6,7],
+    '[탈구] 원위 요척관절':[4,5,6],
+    '[탈구] 반달뼈(월상골)':[6,8,10],
+  },
+  '슬관절':{
+    '무릎뼈(슬개골)':[6,8,10],
+    '대퇴골 관절융기(무릎관절포함)':[8,10,12],
+    '경골 관절융기(상단부)':[8,10,12],
+    '경골 거친면(결절)':[4,5,6],
+    '경골 가시(극)':[5,6,7],
+    '[탈구] 무릎관절':[6,8,10],
+    '[탈구] 무릎뼈(슬개골)':[4,6,8],
+    '[탈구] 근위 경비관절':[4,6,8],
+  },
+  '족관절':{
+    '안쪽복사(내과)':[4,6,8],
+    '가쪽복사(외과)':[4,6,8],
+    '양쪽복사·세복사':[6,8,10],
+    '종아리뼈(비골)':[4,6,8],
+    '정강뼈 몸통(경골 간부)':[12,14,16],
+    '정강뼈 원위부(Pylon)':[10,12,14],
+    '발꿈치뼈(종골)':[6,7,8],
+    '목말뼈 목(거골 경부)':[6,7,8],
+    '목말뼈 몸통(거골 체부)':[6,8,10],
+    '목말뼈 가쪽·뒤쪽돌기':[6,7,8],
+    '기타 발목뼈(족근골)':[6,7,8],
+    '발허리뼈(중족골)':[3,4,5],
+    '발가락뼈(족지골)':[3,4,6],
+    '종자뼈':[3,3,4],
+    '[탈구] 발목관절':[4,6,8],
+    '[탈구] 원위 경비관절':[4,6,8],
+  },
+  '늑골':{
+    '갈비뼈(늑골)':[4,5,6],
+    '복장뼈(흉골)':[4,5,6],
+  },
+};
+
+function setTaDeadlineMode(mode){
+  taDeadlineMode=mode;
+  document.getElementById('ta-dl-mild').classList.toggle('active',mode==='mild');
+  document.getElementById('ta-dl-fx').classList.toggle('active',mode==='fracture');
+  document.getElementById('ta-dl-fracture-box').style.display=mode==='fracture'?'block':'none';
+  if(mode==='mild'){
+    taFxPart=null;taFxSub=null;taFxWeeks=null;
+    document.querySelectorAll('#fxPartGrid .act-chip').forEach(c=>c.classList.remove('active'));
+    const subG=document.getElementById('fxSubGrid');subG.style.display='none';subG.innerHTML='';
+    const sevG=document.getElementById('fxSeverityGrid');sevG.style.display='none';sevG.innerHTML='';
+  }
+  render();
+}
+function selectFxPart(el){
+  document.querySelectorAll('#fxPartGrid .act-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  taFxPart=el.dataset.fx;
+  taFxSub=null;taFxWeeks=null;
+  renderFxSubGrid();
+  render();
+}
+function renderFxSubGrid(){
+  const subGrid=document.getElementById('fxSubGrid');
+  const sevGrid=document.getElementById('fxSeverityGrid');
+  if(!taFxPart){subGrid.style.display='none';subGrid.innerHTML='';sevGrid.style.display='none';sevGrid.innerHTML='';return;}
+  const subs=FRACTURE_DATA[taFxPart]||{};
+  const keys=Object.keys(subs);
+  if(keys.length===1){
+    // 하위유형이 하나뿐이면 자동 선택
+    taFxSub=keys[0];
+    subGrid.style.display='none';subGrid.innerHTML='';
+    renderFxSeverityGrid();
+    return;
+  }
+  subGrid.style.display='flex';
+  subGrid.innerHTML=keys.map(k=>`<div class="act-chip" data-sub="${k}" onclick="selectFxSub(this)">${k}</div>`).join('');
+  sevGrid.style.display='none';sevGrid.innerHTML='';
+}
+function selectFxSub(el){
+  document.querySelectorAll('#fxSubGrid .act-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  taFxSub=el.dataset.sub;
+  taFxWeeks=null;
+  renderFxSeverityGrid();
+  render();
+}
+function renderFxSeverityGrid(){
+  const sevGrid=document.getElementById('fxSeverityGrid');
+  if(!taFxPart||!taFxSub||!FRACTURE_DATA[taFxPart][taFxSub]){sevGrid.style.display='none';sevGrid.innerHTML='';return;}
+  const arr=FRACTURE_DATA[taFxPart][taFxSub]; // [경도,중등도,고도]
+  const labels=['경도','중등도','고도'];
+  sevGrid.style.display='flex';
+  sevGrid.innerHTML=labels.map((lb,i)=>`<div class="act-chip" onclick="selectFxWeeks(${arr[i]},this)">${lb} ${arr[i]}주</div>`).join('');
+}
+function selectFxWeeks(w,el){
+  document.querySelectorAll('#fxSeverityGrid .act-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  taFxWeeks=w;
+  render();
+}
+
+// ── 치료동선 드래그 정렬 ──
+let dongsunSteps=null;   // 현재 순서 (사용자 커스텀 반영, 삭제도 반영)
+let dongsunSig=null;     // 마지막으로 계산한 상태 시그니처 — 바뀌면 기본값으로 재계산
+let dongsunDragIdx=null;
+
+function computeDongsunSteps(hasShot,hasChunna,xrLaterFlag,type){
+  const steps=[];
+  const shotToday=hasShot&&!xrLaterFlag;
+  if(shotToday){
+    steps.push('진료실');
+    steps.push('촬영실');
+    steps.push(hasChunna?'진료실(추나,xr설명)':'진료실(xr설명)');
+  } else {
+    steps.push(hasChunna?'진료실(추나)':'진료실');
+  }
+  steps.push('치료실');
+  steps.push(type==='입원'?'입원수속':'귀가');
+  return steps;
+}
+function syncDongsunSteps(defaultSteps,sig){
+  if(dongsunSig!==sig){ dongsunSteps=[...defaultSteps]; dongsunSig=sig; }
+  else if(!dongsunSteps){ dongsunSteps=[...defaultSteps]; }
+}
+function resetDongsunOrder(){dongsunSteps=null;dongsunSig=null;render();}
+function dongsunRemoveStep(i){
+  if(!dongsunSteps)return;
+  dongsunSteps.splice(i,1);
+  render();
+}
+function renderDongsunList(){
+  const wrap=document.getElementById('dongsunList');
+  const card=document.getElementById('dongsunCard');
+  if(!wrap||!card)return;
+  if(!pType||!dongsunSteps){card.style.display='none';return;}
+  card.style.display='block';
+  if(!dongsunSteps.length){wrap.innerHTML='<span style="color:var(--text3);font-size:12px;">모두 삭제됨 — 기본 순서 버튼으로 복원</span>';return;}
+  wrap.innerHTML=dongsunSteps.map((s,i)=>`
+    <div class="act-chip" draggable="true" data-idx="${i}"
+      ondragstart="dongsunDragStart(event,${i})"
+      ondragover="dongsunDragOver(event)"
+      ondrop="dongsunDrop(event,${i})"
+      ondragend="dongsunDragEnd(event)"
+      style="cursor:grab;user-select:none;display:flex;align-items:center;gap:6px;padding-right:8px;">
+      <span>⠿ ${s}</span>
+      <span onmousedown="event.stopPropagation()" onclick="event.stopPropagation();dongsunRemoveStep(${i})" style="cursor:pointer;color:var(--text3);font-weight:700;font-size:12px;line-height:1;padding:2px 3px;border-radius:4px;" onmouseover="this.style.color='var(--red)';this.style.background='rgba(239,68,68,.12)'" onmouseout="this.style.color='var(--text3)';this.style.background='transparent'">✕</span>
+    </div>
+  `).join('<span style="color:var(--text3);font-size:12px;">→</span>');
+}
+function dongsunDragStart(e,i){dongsunDragIdx=i;e.dataTransfer.effectAllowed='move';setTimeout(()=>{if(e.target)e.target.style.opacity='.35';},0);}
+function dongsunDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';}
+function dongsunDrop(e,i){
+  e.preventDefault();
+  if(dongsunDragIdx===null||dongsunDragIdx===i){dongsunDragIdx=null;return;}
+  const arr=dongsunSteps;
+  const [moved]=arr.splice(dongsunDragIdx,1);
+  arr.splice(i,0,moved);
+  dongsunDragIdx=null;
+  render();
+}
+function dongsunDragEnd(){dongsunDragIdx=null;renderDongsunList();}
+
+let isLightMode=true;
+function toggleTheme(){
+  isLightMode=!isLightMode;
+  document.body.classList.toggle('dark-mode',!isLightMode);
+  const btn=document.getElementById('themeToggleBtn');
+  if(btn) btn.textContent=isLightMode?'🌙 다크 모드':'☀️ 라이트 모드';
+}
+
+function toggleXrLater(){
+  xrLater=!xrLater;
+  document.getElementById('xrLaterBox').style.background=xrLater?'var(--accent)':'var(--surface2)';
+  document.getElementById('xrLaterBox').style.borderColor=xrLater?'var(--accent)':'var(--border)';
+  document.getElementById('xrLaterCheck').style.display=xrLater?'block':'none';
+  if(xrLater&&xrNone){ // 미시행과 상호배타
+    xrNone=false;
+    document.getElementById('xrNoneBox').style.background='var(--surface2)';
+    document.getElementById('xrNoneBox').style.borderColor='var(--border)';
+    document.getElementById('xrNoneCheck').style.display='none';
+    const g=document.getElementById('xrGrid');g.style.opacity='1';g.style.pointerEvents='';
+    const ci=document.getElementById('xrCustomInput');if(ci){ci.disabled=false;ci.style.opacity='1';}
+  }
+  render();
+}
+
+function toggleXrNone(){
+  xrNone=!xrNone;
+  document.getElementById('xrNoneBox').style.background=xrNone?'var(--red)':'var(--surface2)';
+  document.getElementById('xrNoneBox').style.borderColor=xrNone?'var(--red)':'var(--border)';
+  document.getElementById('xrNoneCheck').style.display=xrNone?'block':'none';
+  const grid=document.getElementById('xrGrid');
+  const customInput=document.getElementById('xrCustomInput');
+  if(xrNone){
+    if(xrLater){ // 추후촬영과 상호배타
+      xrLater=false;
+      document.getElementById('xrLaterBox').style.background='var(--surface2)';
+      document.getElementById('xrLaterBox').style.borderColor='var(--border)';
+      document.getElementById('xrLaterCheck').style.display='none';
+    }
+    Object.keys(xrState).forEach(k=>delete xrState[k]);
+    document.querySelectorAll('#xrGrid .xr-chip:not(.locked)').forEach(el=>{const o=el.querySelector('.side-badge');if(o)o.remove();el.classList.remove('active');});
+    if(customInput) customInput.value='';
+    grid.style.opacity='.4';grid.style.pointerEvents='none';
+    if(customInput){customInput.disabled=true;customInput.style.opacity='.4';}
+  } else {
+    grid.style.opacity='1';grid.style.pointerEvents='';
+    if(customInput){customInput.disabled=false;customInput.style.opacity='1';}
+  }
+  render();
+}
+
+function toggleTx2Holiday(){
+  tx2Holiday=!tx2Holiday;
+  const box=document.getElementById('tx2HolidayBox');
+  const chk=document.getElementById('tx2HolidayCheck');
+  if(box){ box.style.background=tx2Holiday?'var(--accent)':'var(--surface2)'; box.style.borderColor=tx2Holiday?'var(--accent)':'var(--border)'; }
+  if(chk) chk.style.display=tx2Holiday?'block':'none';
+  // 칩 선택 초기화 후 재렌더
+  document.querySelectorAll('#tx2TimeChips .act-chip').forEach(c=>c.classList.remove('active'));
+  const inp=document.getElementById('tx2TimeInput'); if(inp) inp.value='';
+  renderTx2TimeChips();
+  render();
+}
+
+function renderTx2TimeChips(){
+  const dow=new Date().getDay(); // 0=일,6=토
+  const baseWeekend=(dow===0||dow===6);
+  const useWeekend=baseWeekend||tx2Holiday; // 주말이거나 공휴일 체크 시
+  const times=useWeekend
+    ?['오후 1시 30분','오후 2시','오후 2시 30분','오후 3시']
+    :['오후 2시','오후 2시 40분','오후 3시 20분','오후 4시','오후 4시 40분'];
+  const label=useWeekend?(baseWeekend?'주말 시간표':'평일 — 공휴일 시간표'):'평일 시간표';
+  const dayEl=document.getElementById('tx2DayLabel');
+  if(dayEl) dayEl.textContent=label;
+  // 공휴일 체크박스는 평일일 때만 표시
+  const holidayWrap=document.getElementById('tx2HolidayWrap');
+  if(holidayWrap) holidayWrap.style.display=baseWeekend?'none':'flex';
+  const wrap=document.getElementById('tx2TimeChips');
+  if(!wrap) return;
+  wrap.innerHTML=times.map(t=>
+    `<div class="act-chip" data-time="${t}" onclick="selectTx2Time(this)">${t}</div>`
+  ).join('');
+}
+
+function setTx2(mode){
+  tx2Mode=mode;
+  ['none','time','consec'].forEach(m=>{
+    const el=document.getElementById('tx2-'+m);
+    if(!el)return;
+    el.classList.toggle('active',m===mode);
+  });
+  const box=document.getElementById('tx2TimeBox');
+  if(box) box.style.display=(mode==='time')?'flex':'none';
+  if(mode==='time') renderTx2TimeChips();
+  if(mode!=='time'){
+    tx2Holiday=false;
+    // 공휴일 체크박스 UI 초기화
+    const hbox=document.getElementById('tx2HolidayBox');
+    const hchk=document.getElementById('tx2HolidayCheck');
+    if(hbox){hbox.style.background='var(--surface2)';hbox.style.borderColor='var(--border)';}
+    if(hchk) hchk.style.display='none';
+    const inp=document.getElementById('tx2TimeInput');
+    if(inp) inp.value='';
+  }
+  render();
+}
+
+function selectTx2Time(el){
+  document.querySelectorAll('#tx2TimeChips .act-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  const inp=document.getElementById('tx2TimeInput');
+  if(inp) inp.value='';
+  render();
+}
+
+function onTx2DirectInput(){
+  // 직접입력 시 칩 선택 해제
+  document.querySelectorAll('#tx2TimeChips .act-chip').forEach(c=>c.classList.remove('active'));
+  render();
+}
+
+function sca(el,on,c){el.style.border=`1px solid ${on?c:'#2e3348'}`;el.style.background=on?c+'26':'#22263a';el.style.color=on?c:'#8b90a7';}
+function updateModeBadge(){
+  const badge=document.getElementById('modeBadge');
+  if(!badge)return;
+  if(chartMode==='ta'){
+    badge.textContent='🚗 자동차보험';
+    badge.style.background='rgba(79,142,247,.18)';
+    badge.style.border='1px solid var(--accent)';
+    badge.style.color='var(--accent)';
+  } else {
+    badge.textContent='🏥 건강보험';
+    badge.style.background='rgba(34,197,94,.12)';
+    badge.style.border='1px solid var(--green)';
+    badge.style.color='var(--green)';
+  }
+}
+
+function toggleTA(){isTA=!isTA;render();}
+function toggleGB(){isGB=!isGB;render();}
+
+function setGbDeadlineMode(mode){
+  gbDeadlineMode=mode;
+  ['auto','pick','later'].forEach(m=>{
+    const btn=document.getElementById('dl-'+m);
+    if(btn) btn.classList.toggle('active',m===mode);
+    const box=document.getElementById('dl-'+m+'-box');
+    if(box) box.style.display=m===mode?'block':'none';
+  });
+  render();
+}
+
+function setChartMode(mode){
+  chartMode=mode;
+  // 탭 UI
+  if(mode==='gb'){
+    document.getElementById('tab-gb').className='mode-tab active active-gb';
+    document.getElementById('tab-ta').className='mode-tab';
+  } else {
+    document.getElementById('tab-ta').className='mode-tab active';
+    document.getElementById('tab-gb').className='mode-tab';
+  }
+  // body 클래스
+  document.body.classList.toggle('mode-gb',mode==='gb');
+  document.body.classList.toggle('mode-ta',mode==='ta');
+  // 상태 초기화
+  isTA=(mode==='ta'); isGB=(mode==='gb'); pType='';
+  gbDeadlineMode='auto';
+  // 건보 입원기한 UI 초기화
+  const dlAutoBtn=document.getElementById('dl-auto');
+  const dlPickBtn=document.getElementById('dl-pick');
+  const dlLaterBtn=document.getElementById('dl-later');
+  const dlAutoBox=document.getElementById('dl-auto-box');
+  const dlPickBox=document.getElementById('dl-pick-box');
+  const dlLaterBox=document.getElementById('dl-later-box');
+  if(dlAutoBtn){dlAutoBtn.classList.add('active');dlPickBtn.classList.remove('active');dlLaterBtn.classList.remove('active');}
+  if(dlAutoBox){dlAutoBox.style.display='block';dlPickBox.style.display='none';dlLaterBox.style.display='none';}
+  sca(document.getElementById('chip-in'),false,'#22c55e');
+  sca(document.getElementById('chip-out'),false,'#22c55e');
+  document.getElementById('admitCard').style.display='none';
+  document.getElementById('ptOutpatient').style.display='none';
+  document.getElementById('ptInpatient').style.display='none';
+  // 선택 상태 초기화
+  Object.keys(xrState).forEach(k=>delete xrState[k]);
+  Object.keys(ptState.out).forEach(k=>delete ptState.out[k]);
+  Object.keys(ptState.am).forEach(k=>delete ptState.am[k]);
+  Object.keys(ptState.pm).forEach(k=>delete ptState.pm[k]);
+  ictOutCount=0;
+  seatSelected=null;
+  dongsunSteps=null;
+  taDeadlineMode='mild';taFxPart=null;taFxSub=null;taFxWeeks=null;
+  const taDlMildEl=document.getElementById('ta-dl-mild');
+  const taDlFxEl=document.getElementById('ta-dl-fx');
+  const taDlFxBoxEl=document.getElementById('ta-dl-fracture-box');
+  if(taDlMildEl)taDlMildEl.classList.add('active');
+  if(taDlFxEl)taDlFxEl.classList.remove('active');
+  if(taDlFxBoxEl)taDlFxBoxEl.style.display='none';
+  document.querySelectorAll('#fxPartGrid .act-chip').forEach(c=>c.classList.remove('active'));
+  const fxSubEl=document.getElementById('fxSubGrid');
+  if(fxSubEl){fxSubEl.style.display='none';fxSubEl.innerHTML='';}
+  const fxSevEl=document.getElementById('fxSeverityGrid');
+  if(fxSevEl){fxSevEl.style.display='none';fxSevEl.innerHTML='';}
+  xrLater=false;
+  document.getElementById('xrLaterBox').style.background='var(--surface2)';
+  document.getElementById('xrLaterBox').style.borderColor='var(--border)';
+  document.getElementById('xrLaterCheck').style.display='none';
+  xrNone=false;
+  document.getElementById('xrNoneBox').style.background='var(--surface2)';
+  document.getElementById('xrNoneBox').style.borderColor='var(--border)';
+  document.getElementById('xrNoneCheck').style.display='none';
+  document.getElementById('xrGrid').style.opacity='1';
+  document.getElementById('xrGrid').style.pointerEvents='';
+  const xrCIreset=document.getElementById('xrCustomInput');
+  if(xrCIreset){xrCIreset.disabled=false;xrCIreset.style.opacity='1';}
+  document.querySelectorAll('#xrGrid .xr-chip').forEach(el=>{const o=el.querySelector('.side-badge');if(o)o.remove();el.classList.remove('active');});
+  document.querySelectorAll('.seat-chip').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.body-chip').forEach(el=>{const o=el.querySelector('.pt-side-badge');if(o)o.remove();el.classList.remove('active');});
+  // 액팅 칩 초기화 후 건보 기본값 설정
+  document.querySelectorAll('.act-chip[data-val]').forEach(el=>el.classList.remove('active'));
+  { const s=document.getElementById('bjSelect'); if(s)s.value=''; }
+  herbState={rx:null,add:[]};
+  // 2차 치료 상태 초기화
+  tx2Mode='consec'; tx2Holiday=false;
+  ['none','time','consec'].forEach(m=>{const el=document.getElementById('tx2-'+m);if(el)el.classList.toggle('active',m==='consec');});
+  const tx2box=document.getElementById('tx2TimeBox');if(tx2box)tx2box.style.display='none';
+  if(mode==='gb'){
+    // 건보 기본: 침·부항 선택
+    document.querySelector('.act-chip[data-val="침"]')?.classList.add('active');
+    document.querySelector('.act-chip[data-val="부항"]')?.classList.add('active');
+  }
+  updateModeBadge();
+  render();
+}
+
+// ── 변증 데이터 (KCD 117종, 통계청 한의병증 U50-U79) ──
+const BJ_DATA={
+  // ── 육음병증(六淫病證)
+  '풍한증':    {mangjin:'안색은 대체로 정상이거나 창백, 설담홍·태박백', jeoljin:'맥부긴'},   // U50.0
+  '풍열증':    {mangjin:'안면홍조, 설첨홍·태박황', jeoljin:'맥부삭'},   // U50.1
+  '풍습증':    {mangjin:'설태백니', jeoljin:'맥부완(유)'},   // U50.2
+  '한습증':    {mangjin:'안색 황회무광, 설담반·태백니', jeoljin:'맥침지완'},   // U50.3
+  '습열증':    {mangjin:'안면 유광, 설홍·태황니', jeoljin:'맥유삭'},   // U50.4
+  '양조증':    {mangjin:'설태박백건', jeoljin:'맥부긴'},   // U50.5
+  '온조증':    {mangjin:'설첨홍·태박황건', jeoljin:'맥부삭'},   // U50.6
+  '열독치성증':  {mangjin:'설강홍·태황조', jeoljin:'맥삭유력'},   // U50.7
+  '서열상기증':  {mangjin:'안면홍적, 설홍·태황', jeoljin:'맥허삭'},   // U50.8
+  // ── 육경병증(六經病證)
+  '태양병증':   {mangjin:'설태박백', jeoljin:'맥부'},   // U52
+  '양명병증':   {mangjin:'설태황조', jeoljin:'맥홍대'},   // U53
+  '소양병증':   {mangjin:'설태백', jeoljin:'맥현'},   // U54
+  '태음병증':   {mangjin:'안색 황백무화, 설담·태백', jeoljin:'맥완약'},   // U55
+  '소음병증':   {mangjin:'안색창백, 설담·태백', jeoljin:'맥미세'},   // U56
+  '궐음병증':   {mangjin:'안색창백, 설첨홍·태백활', jeoljin:'맥세'},   // U57
+  // ── 삼초·위기영혈병증
+  '상초증':    {mangjin:'설첨홍·태박백', jeoljin:'맥부삭'},   // U59.0
+  '중초증':    {mangjin:'설홍·태황니', jeoljin:'맥유삭'},   // U59.1
+  '하초증':    {mangjin:'설강소태', jeoljin:'맥세삭'},   // U59.2
+  '위분증':    {mangjin:'설첨홍·태박백', jeoljin:'맥부삭'},   // U59.4
+  '기분증':    {mangjin:'면적, 설홍·태황조', jeoljin:'맥홍대유력'},   // U59.5
+  '영분증':    {mangjin:'설강홍무태', jeoljin:'맥세삭'},   // U59.6
+  '혈분증':    {mangjin:'설심강', jeoljin:'맥세삭'},   // U59.7
+  // ── 기병증(氣病證)
+  '기허증':    {mangjin:'안색담백무화, 설담·태박', jeoljin:'맥허약'},   // U60.0
+  '기체증':    {mangjin:'안색 대체로 정상, 설태박백', jeoljin:'맥현'},   // U60.3
+  '기역증':    {mangjin:'안색정상', jeoljin:'맥현'},   // U60.4
+  // ── 혈병증(血病證)
+  '혈허증':    {mangjin:'안색위황, 설담·태박', jeoljin:'맥세'},   // U61.0
+  '혈어증':    {mangjin:'안색회암, 설질자암·유어점', jeoljin:'맥삽'},   // U61.2
+  '혈조증':    {mangjin:'설건소진', jeoljin:'맥세삽'},   // U61.3
+  '혈한증':    {mangjin:'설담자', jeoljin:'맥침지'},   // U61.4
+  '혈열증':    {mangjin:'안면홍적, 설강홍·강자', jeoljin:'맥세삭'},   // U61.5
+  // ── 기혈음양병증
+  '음허증':    {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U62.0
+  '양허증':    {mangjin:'안색황백, 설담반·태백윤', jeoljin:'맥침지무력'},   // U62.1
+  '망음증':    {mangjin:'설건강홍', jeoljin:'맥허삭무력'},   // U62.2
+  '망양증':    {mangjin:'안색창백, 설담윤', jeoljin:'맥미욕절'},   // U62.3
+  '기혈양허증':  {mangjin:'안색담백, 설담눈·태박', jeoljin:'맥세약'},   // U62.4
+  '음양양허증':  {mangjin:'설담', jeoljin:'맥세약'},   // U62.5
+  '기음양허증':  {mangjin:'설홍소진', jeoljin:'맥세약'},   // U62.6
+  // ── 진액병증(津液病證)
+  '진액휴손증':  {mangjin:'설건소진', jeoljin:'맥세삭'},   // U63.0
+  '수음내정증':  {mangjin:'설태백활', jeoljin:'맥현'},   // U63.1
+  '수습범람증':  {mangjin:'설담반·태백활', jeoljin:'맥침'},   // U63.2
+  // ── 간허증(肝虛證)
+  '간혈허증':   {mangjin:'안색위황, 설담박태', jeoljin:'맥세'},   // U64.0
+  '간음허증':   {mangjin:'설홍소진', jeoljin:'맥현세삭'},   // U64.1
+  '간양허증':   {mangjin:'안색청백, 설담반', jeoljin:'맥침세무력'},   // U64.2
+  '간기허증':   {mangjin:'설담', jeoljin:'맥현세무력'},   // U64.3
+  // ── 간실증(肝實證)
+  '간양상항증':  {mangjin:'안면홍적, 설홍·태황', jeoljin:'맥현유력'},   // U65.0
+  '간기울결증':  {mangjin:'설정상', jeoljin:'맥현'},   // U65.1
+  '간화상염증':  {mangjin:'안면홍적, 설홍·태황조', jeoljin:'맥현삭유력'},   // U65.2
+  '간울혈어증':  {mangjin:'안면암체', jeoljin:'맥현삽'},   // U65.6
+  '한체간맥증':  {mangjin:'안색청백, 설담·태백윤', jeoljin:'맥침현'},   // U65.7
+  '간경습열증':  {mangjin:'설홍·태황니', jeoljin:'맥현삭'},   // U65.8
+  // ── 심허증(心虛證)
+  '심기허증':   {mangjin:'안색담백무화, 설담·태박', jeoljin:'맥허'},   // U66.0
+  '심혈허증':   {mangjin:'안색위황무화, 설담·태박', jeoljin:'맥세'},   // U66.1
+  '심음허증':   {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U66.2
+  '심양허증':   {mangjin:'안색창백, 설담반·태백활', jeoljin:'맥허'},   // U66.3
+  '심기혈양허증': {mangjin:'안색담백위황, 설담눈', jeoljin:'맥세약'},   // U66.5
+  '심기음양허증': {mangjin:'설홍소진', jeoljin:'맥세삭무력'},   // U66.6
+  // ── 심실증(心實證)
+  '심화상염증':  {mangjin:'면적, 설첨홍강·생창', jeoljin:'맥삭유력'},   // U67.0
+  '심맥비조증':  {mangjin:'안면암체, 설자암·유어반', jeoljin:'맥세삽'},   // U67.1
+  '담화요심증':  {mangjin:'안면홍적, 설홍·태황니', jeoljin:'맥활삭'},   // U67.2
+  '수기능심증':  {mangjin:'안면수종, 설담반·태백활', jeoljin:'맥침지'},   // U67.3
+  '담미심규증':  {mangjin:'설태백니', jeoljin:'맥활'},   // U67.4
+  // ── 비병증(脾病證)
+  '비기허증':   {mangjin:'안색위황, 설담·태박', jeoljin:'맥완약'},   // U68.0
+  '중기하함증':  {mangjin:'안색위황, 설담·태박', jeoljin:'맥허약'},   // U68.1
+  '비불통혈증':  {mangjin:'안색위황, 설담', jeoljin:'맥세약'},   // U68.2
+  '비음허증':   {mangjin:'설홍소진', jeoljin:'맥세삭'},   // U68.3
+  '비양허증':   {mangjin:'안색황백무화, 설담반·태백활', jeoljin:'맥침지무력'},   // U68.4
+  '한습곤비증':  {mangjin:'안색황회무광, 설태백니', jeoljin:'맥유완'},   // U68.5
+  '습열상비증':  {mangjin:'설홍·태황니', jeoljin:'맥유삭'},   // U68.6
+  // ── 폐허증(肺虛證)
+  '폐기허증':   {mangjin:'안색담백, 설담·태백', jeoljin:'맥허약'},   // U69.0
+  '폐음허증':   {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U69.1
+  '폐양허증':   {mangjin:'안색황백, 설담반', jeoljin:'맥침지무력'},   // U69.2
+  '폐기음양허증': {mangjin:'설홍소진', jeoljin:'맥세약'},   // U69.3
+  // ── 폐실증(肺實證)
+  '풍한속폐증':  {mangjin:'설태박백', jeoljin:'맥부긴'},   // U70.0
+  '풍열범폐증':  {mangjin:'설첨홍·태박황', jeoljin:'맥부삭'},   // U70.1
+  '조사범폐증':  {mangjin:'설건소진', jeoljin:'맥부삭'},   // U70.2
+  '한담조폐증':  {mangjin:'안색백, 설태백니', jeoljin:'맥활'},   // U70.3
+  '담열옹폐증':  {mangjin:'안면홍적, 설홍·태황니', jeoljin:'맥활삭'},   // U70.4
+  // ── 신병증(腎病證)
+  '신기허증':   {mangjin:'안색흑암무화, 설담·태백', jeoljin:'맥침세무력'},   // U71.0
+  '신음허증':   {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U71.4
+  '신양허증':   {mangjin:'안색황백, 설담반·태백윤', jeoljin:'맥침세무력'},   // U71.5
+  '신허수범증':  {mangjin:'안색황백, 설담반·태백활', jeoljin:'맥침세'},   // U71.7
+  // ── 담병증(膽病證)
+  '담기허증':   {mangjin:'설담', jeoljin:'맥현세약'},   // U72.0
+  '담열증':    {mangjin:'설홍·태황니', jeoljin:'맥현삭'},   // U72.2
+  // ── 위병증(胃病證)
+  '위기허증':   {mangjin:'안색위황, 설담·태박', jeoljin:'맥허약'},   // U73.0
+  '위음허증':   {mangjin:'설홍소진', jeoljin:'맥세삭'},   // U73.1
+  '위열증':    {mangjin:'안면홍적, 설홍·태황조', jeoljin:'맥활삭'},   // U73.3
+  '위기상역증':  {mangjin:'안색 대체로 정상, 설태박백', jeoljin:'맥현'},   // U73.4
+  // ── 대장병증(大腸病證)
+  '대장진휴증':  {mangjin:'설건소진', jeoljin:'맥세삽'},   // U74.0
+  '대장허한증':  {mangjin:'안색황백, 설담반·태백활', jeoljin:'맥침지무력'},   // U74.1
+  '대장습열증':  {mangjin:'설홍·태황니', jeoljin:'맥유삭'},   // U74.2
+  '대장실열증':  {mangjin:'안면홍적, 설홍·태황조', jeoljin:'맥침실유력'},   // U74.3
+  // ── 소장병증(小腸病證)
+  '소장허한증':  {mangjin:'안색황백, 설담·태백', jeoljin:'맥침지완'},   // U75.0
+  '소장기체증':  {mangjin:'안색 대체로 정상, 설태박백', jeoljin:'맥현'},   // U75.1
+  '소장실열증':  {mangjin:'설홍·태황', jeoljin:'맥삭유력'},   // U75.2
+  // ── 방광병증(膀胱病證)
+  '방광허한증':  {mangjin:'안색황백, 설담·태백윤', jeoljin:'맥침지무력'},   // U76.0
+  '방광습열증':  {mangjin:'설홍·태황니', jeoljin:'맥삭유력'},   // U76.1
+  // ── 충임포궁병증
+  '충임허쇠증':  {mangjin:'안색위황, 설담·태박', jeoljin:'맥세약'},   // U77.0
+  '충임허한증':  {mangjin:'안색황백, 설담반·태백윤', jeoljin:'맥침지'},   // U77.2
+  '충임열증':   {mangjin:'안면홍적, 설홍·태황', jeoljin:'맥삭유력'},   // U77.3
+  '충임어조증':  {mangjin:'안면암체', jeoljin:'맥삽'},   // U77.4
+  // ── 장부겸병증(臟腑兼病證)
+  '간담습열증':  {mangjin:'설홍·태황니', jeoljin:'맥현삭'},   // U78.0
+  '간비불화증':  {mangjin:'설태박백', jeoljin:'맥현완'},   // U78.1
+  '간위불화증':  {mangjin:'안색정상, 설태박백', jeoljin:'맥현'},   // U78.2
+  '간화범폐증':  {mangjin:'안면홍적, 설홍·태황', jeoljin:'맥현삭'},   // U78.3
+  '간신음허증':  {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U78.4
+  '심간혈허증':  {mangjin:'안색위황, 설담', jeoljin:'맥세'},   // U78.5
+  '심담허겁증':  {mangjin:'설담·태박', jeoljin:'맥현세'},   // U78.6
+  '심비양허증':  {mangjin:'안색위황무화, 설담·태박', jeoljin:'맥세약'},   // U78.7
+  '심폐기허증':  {mangjin:'안색담백, 설담·태백', jeoljin:'맥허약'},   // U78.8
+  '심신양허증':  {mangjin:'안색황백, 설담반·태백활', jeoljin:'맥침미'},   // U78.9
+  '심신불교증':  {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U79.0
+  '비위양허증':  {mangjin:'안색황백, 설담반·태백활', jeoljin:'맥침지무력'},   // U79.1
+  '비위습열증':  {mangjin:'설홍·태황니', jeoljin:'맥유삭'},   // U79.2
+  '식상비위증':  {mangjin:'설태후니', jeoljin:'맥활'},   // U79.3
+  '비신양허증':  {mangjin:'안색황백, 설담반·태백활', jeoljin:'맥침지무력'},   // U79.4
+  '폐비양허증':  {mangjin:'안색황백, 설담반·태백활', jeoljin:'맥허완'},   // U79.5
+  '폐신음허증':  {mangjin:'관홍, 설홍소진', jeoljin:'맥세삭'},   // U79.6
+};
+
+function editCCLabel(e, btn){
+  e.stopPropagation();
+  const header=btn.closest('.cc-header');
+  const item=btn.closest('.cc-item');
+  const defaultLabel=item.dataset.key||'';
+  const labelEl=header.querySelector('.cc-label');
+  const original=labelEl.textContent.trim();
+
+  const wrap=document.createElement('span');
+  wrap.style.cssText='display:flex;align-items:center;gap:4px;flex:1;';
+
+  const input=document.createElement('input');
+  input.type='text';
+  input.value=original;
+  input.className='cc-label-input';
+  input.style.flex='1';
+  input.onclick=ev=>ev.stopPropagation();
+
+  const resetBtn=document.createElement('span');
+  resetBtn.textContent='↺';
+  resetBtn.title='기본값으로 초기화';
+  resetBtn.style.cssText='cursor:pointer;font-size:13px;color:var(--text3);padding:0 4px;flex-shrink:0;';
+  resetBtn.onmousedown=ev=>{ev.preventDefault();ev.stopPropagation();input.value=defaultLabel;input.focus();};
+
+  wrap.appendChild(input);
+  wrap.appendChild(resetBtn);
+  labelEl.replaceWith(wrap);
+  btn.style.display='none';
+  input.focus();input.select();
+
+  function save(){
+    const newLabel=input.value.trim()||original;
+    const newSpan=document.createElement('span');
+    newSpan.className='cc-label';
+    newSpan.textContent=newLabel;
+    wrap.replaceWith(newSpan);
+    btn.style.display='';
+    render();
+  }
+  input.addEventListener('blur',save);
+  input.addEventListener('keydown',ev=>{if(ev.key==='Enter')input.blur();if(ev.key==='Escape'){input.value=original;input.blur();}});
+}
+
+function toggleType(t){pType=(pType===t)?'':t;sca(document.getElementById('chip-in'),pType==='입원','#22c55e');sca(document.getElementById('chip-out'),pType==='통원','#22c55e');document.getElementById('chestChip').classList.toggle('show',pType==='입원');document.getElementById('admitCard').style.display=pType==='입원'?'block':'none';document.getElementById('ptOutpatient').style.display=pType==='통원'?'block':'none';document.getElementById('ptInpatient').style.display=pType==='입원'?'block':'none';render();}
+function toggleSeat(el){const v=el.dataset.val;if(seatSelected===v){seatSelected=null;el.classList.remove('active');}else{seatSelected=v;document.querySelectorAll('.seat-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');}render();}
+function handleXR(el){const k=el.dataset.key;if(el.dataset.bi==='1'){xrPK=k;xrPS=xrState[k]||null;document.getElementById('xrPopTitle').textContent=k;document.querySelectorAll('#xrOverlay .pop-btn').forEach(b=>b.classList.toggle('sel',b.dataset.side===xrPS));document.getElementById('xrOverlay').classList.add('open');}else{if(xrState[k])delete xrState[k];else xrState[k]=true;uxc(el,k);render();}}
+function uxc(el,k){const s=xrState[k];const o=el.querySelector('.side-badge');if(o)o.remove();if(!s){el.classList.remove('active');}else{el.classList.add('active');if(typeof s==='string'){const b=document.createElement('span');b.className='side-badge';b.textContent=s==='Both'?'양':s;el.appendChild(b);}}}
+function xrOC(e){if(e.target===document.getElementById('xrOverlay'))xrCP();}
+function xrSS(b){xrPS=(xrPS===b.dataset.side)?null:b.dataset.side;document.querySelectorAll('#xrOverlay .pop-btn').forEach(x=>x.classList.toggle('sel',x.dataset.side===xrPS));}
+function xrCP(){document.getElementById('xrOverlay').classList.remove('open');xrPK=null;xrPS=null;}
+function xrCF(){if(xrPK){const el=document.querySelector(`#xrGrid [data-key="${xrPK}"]`);if(xrPS)xrState[xrPK]=xrPS;else delete xrState[xrPK];if(el)uxc(el,xrPK);render();}xrCP();}
+function toggleAct(el){
+  const val=el.dataset.val;
+  if(val==='침치료만'){
+    if(chartMode==='gb') return; // GB 모드에서 침치료만 비활성
+    const on=!el.classList.contains('active');
+    document.querySelectorAll('.act-chip[data-val]').forEach(c=>c.classList.remove('active'));
+    if(on) el.classList.add('active');
+  } else {
+    if(document.querySelector('.act-chip[data-val="침치료만"].active')) return;
+    el.classList.toggle('active');
+  }
+  render();
+}
+function toggleCheopYakUnified(el){
+  if(document.querySelector('.act-chip[data-val="침치료만"].active')) return;
+  if(chartMode==='gb'){
+    // 건보 모드: 팝업 없이 단순 토글
+    el.classList.toggle('active');
+    render();
+    return;
+  }
+  // TA 모드: 한약 팝업
+  if(el.classList.contains('active')){
+    el.classList.remove('active');
+    herbState={rx:null,add:[]};
+    render();
+  } else {
+    herbOpen();
+  }
+}
+
+// ── 한약 데이터 ──
+const HERB_RX=[
+  {g:'기체증 및 근육 긴장군',name:'계지탕가감',ingr:'*계지2 작약2 감초1 생강1 대조1 숙지황1',
+   bj:'기체(氣滯) 및 영위불화(營衛不和), 사고 충격으로 체표 경락의 기순환이 정체되어 통증 부위가 일정하지 않은 유주성(遊走性) 통증과 전신 근 긴장을 호소함. 계지·생강으로 소통을 돕고 작약·감초로 근육 경련을 완화(완급지통)하며, 숙지황을 가하여 사고로 소모된 정혈(精血)을 보충하고 손상 조직의 회복 환경을 조성하기 위해 처방함.'},
+  {g:'기체증 및 근육 긴장군',name:'황기계지탕가감',ingr:'*황기2 계지2 작약1 생강1 대조1',
+   bj:'기허기체(氣虛氣滯), 평소 소증(素證)이 허약하거나 사고 후 급격한 기력 저하를 동반한 기체 상태임. 황기로 보표익기(補表益氣)하여 손상 부위의 자생력을 높이고, 계지탕의 기전을 통해 정체된 기기를 소통시켜 근육의 비정상적인 긴장과 이완을 정상화하기 위해 처방함.'},
+  {g:'기체증 및 근육 긴장군',name:'갈근탕가감',ingr:'*갈근2 계지1 작약1 감초1 생강1 대조1 마황2',
+   bj:'풍한습비(風寒濕痺)로 인한 기체, 항강(項强), 편타성 손상(Whiplash injury)으로 인한 경추 및 견갑부의 극심한 강직과 가동 범위 제한을 호소함. 갈근의 해기(解肌) 효능으로 항배부 근육에 진액을 공급하여 유연성을 회복시키고, 마황의 강력한 소통력을 통해 체표의 정체된 사기를 발산시켜 급성 통증을 제어하기 위해 처방함.'},
+  {g:'기체증 및 근육 긴장군',name:'작약감초탕가감',ingr:'*작약2 감초2',
+   bj:'근맥구급(筋脈拘急), 기체증, 사고 직후 특정 근육군의 과도한 수축으로 인한 급성 근육 경련 및 극심한 통증을 호소함. 작약의 진경 작용과 감초의 완화 작용을 결합한 완급지통(緩急止痛) 기전을 통해 근육 긴박을 즉각적으로 해소하고 기혈 순환 정체를 개선하기 위해 처방함.'},
+  {g:'기체증 및 근육 긴장군',name:'마행의감탕가감',ingr:'*마황2 행인1 감초1 의이인2',
+   bj:'풍습비저(風濕痺阻) 및 기체(氣滯), 사고 후 기운이 정체되어 근육과 관절이 뻣뻣하고, 특히 습도가 높거나 오후가 되면 통증이 심해지는 양상을 보임. 마황의 발산 작용으로 경락의 막힌 기운을 뚫고, 의이인이 조직 사이에 정체된 습기를 제거하여 근육의 긴장을 풀어줌. 전신 근육의 긴장과 기체(氣滯)로 인한 유주성 통증을 습기(濕) 관점에서 접근하여 소통시키고, 신체 가동 범위를 회복하기 위해 처방함.'},
+  {g:'기체증 및 근육 긴장군',name:'부자탕가감',ingr:'*인삼2 창출1 복령1 작약1 부자0.5',
+   bj:'양허기체(陽虛氣滯) 및 한비(寒痺), 사고 후 통증 부위의 냉감(冷感)과 전신 오한, 신진대사 저하를 동반한 기체 증상을 보임. 부자의 회양(回陽) 효능으로 내부 양기를 북돋아 한습을 제거하고 경락을 온화(溫和)하게 소통시켜, 기순환 정체로 인한 만성적 통증과 무력감을 개선하기 위해 처방함.'},
+  {g:'기체증 및 근육 긴장군',name:'이중탕가감',ingr:'*백출2 인삼2 건강2 감초1',
+   bj:'비위허한(脾胃虛寒) 및 기체(氣滯), 사고 이후 소화 기능 저하와 함께 전신 무력감, 복부 팽만감, 유주성(遊走性) 통증을 호소함. 인삼과 백출로 중초(中焦)의 기운을 세우고, 건강의 온중(溫中) 효과를 통해 사고 충격으로 위축된 내부 양기를 회복시킴. 소화기의 원동력을 확보함으로써 기체(氣滯) 상태를 근본적으로 해소하고 근육의 비정상적인 긴장을 완화하기 위해 처방함.'},
+  {g:'혈어증 및 외상 중심군',name:'당귀수산가감',ingr:'*당귀2 적작약1 계지1 감초1 홍화1 도인1',
+   bj:'외상성 혈어(血瘀), 사고 당시 물리적 타격으로 발생한 어혈이 경락에 정체되어, 특정 부위의 고정적인 자통(刺痛) 및 야간 통증 심화를 호소함. 당귀·적작약으로 활혈(活血)하고 홍화·도인의 파어(破瘀) 작용을 통해 죽은 피를 제거하여, 손상 부위의 부종과 멍을 삭히고 기혈 순환을 정상화하기 위해 처방함.'},
+  {g:'혈어증 및 외상 중심군',name:'계지복령환가감',ingr:'*의이인2 계지1 작약1 복령1 목단피1 도인1',
+   bj:'어혈저체(瘀血阻滯) 및 수독(水毒) 병존, 사고 후 발생한 어혈이 정체되어 미세혈관의 혈류 저하와 국소 부종이 동반된 상태임. 목단피·도인으로 혈분(血分)의 어혈을 다스리고 복령·의이인으로 주변 습기를 배출하여 순환 대사를 개선함으로써, 어혈성 통증과 무거운 감각을 동시에 해소하기 위해 처방함.'},
+  {g:'혈어증 및 외상 중심군',name:'월비가출탕가감',ingr:'*마황2 백출1 감초1 생강1 대조1 석고1',
+   bj:'어혈유열(瘀血有熱) 및 수종(水腫), 통증 부위에 뚜렷한 열감과 염증 반응, 심한 부종이 동반된 혈어증 상태임. 석고의 청열(淸熱) 효능으로 내부 염증열을 식히고 마황·백출의 수분 대사 조절 기능을 통해 부종을 제거하며, 정체된 혈액 순환을 소통시켜 급성 염증성 통증을 완화하기 위해 처방함.'},
+  {g:'습담 및 대사 저하군',name:'오령산가감',ingr:'*복령2 저령2 택사2 산수유1 산약1',
+   bj:'수습정체(水濕停滯) 및 담음(痰飮), 사고 후 대사 기능 저하로 전신 부종, 신중(身重), 소변 불리를 동반한 담음 상태임. 택사·저령·복령의 이수삼습(利水渗濕) 기전을 통해 불필요한 체내 수분을 배출하고 수액 대사를 정상화함으로써, 담음으로 유발된 전신 무력감과 중압감을 개선하기 위해 처방함.'},
+  {g:'습담 및 대사 저하군',name:'방기황기탕가감',ingr:'*방기2 백출1 감초1 생강1 대조1 황기2',
+   bj:'표허부종(表虛浮腫) 및 습담(濕痰), 체격이 있거나 쉽게 붓는 환자가 사고 후 대사 저하로 사지 무거움, 두중감, 전신 무력감을 호소함. 방기와 황기의 배합을 통해 체표 방어력을 높이면서 피하에 정체된 수분(습담)을 강력하게 배출함. 백출과 생강이 비위 대사를 돕고 기운을 소통시켜 신중(身重) 증상과 부종성 통증을 완화하기 위해 처방함.'},
+  {g:'습담 및 대사 저하군',name:'오적산가감',ingr:'*창출2 당귀2 후박1 길경1 마황1 생강2 대조2 진피1',
+   bj:'오적(五積: 氣·血·痰·積·寒), 담음 정체, 사고 후 통증과 함께 소화 불량, 전신 냉감, 몸의 무거움 등 다각적인 대사 정체 증상을 호소함. 창출·진피의 조습(燥濕) 작용과 당귀의 활혈 작용을 병행하여 전신의 순환 체계를 복구하고, 기·혈·담·한의 복합적인 정체로 인한 후유증을 다스리기 위해 처방함.'},
+  {g:'습담 및 대사 저하군',name:'의이인탕가감',ingr:'*의이인2 백출2 당귀2 작약2 마황1 계지1',
+   bj:'습비(濕痺) 및 담음, 관절과 근육 사이에 습담이 정체되어 사지의 무거운 저림과 가동 제한을 호소함. 의이인의 제습(除濕) 및 진경 효능과 백출의 보비(補脾) 기능을 활용하여 조직 내 노폐물을 배출하고 경락을 온통(溫通)시켜, 만성적인 중압감과 통증을 해소하기 위해 처방함.'},
+  {g:'습담 및 대사 저하군',name:'당귀작약산가감',ingr:'*당귀2 작약2 복령2 백출1 택사1 천궁1',
+   bj:'혈허수독(血虛水毒), 담음, 체력이 저하된 환자가 사고 후 어지럼증, 빈혈 증상과 함께 손발 부종 및 저림을 호소함. 당귀·천궁으로 신혈(新血)을 생성하고 작약으로 통증을 다스리는 동시에, 복령·택사의 이수 작용으로 수독·담음을 제거하여 기혈 부족과 대사 정체를 동시에 보하기 위해 처방함.'},
+  {g:'심신 및 스트레스 관련군',name:'감맥대조탕가감',ingr:'*소맥2 감초1 생강1 대조2',
+   bj:'심신불교(心腎不交), 사고의 심리적 충격으로 인한 불안, 경자(驚悸), 불면 및 신경 과민 증상을 호소함. 소맥·대조의 신경 안정 기전(안신)을 통해 과민해진 자율신경계를 진정시키고 심신의 긴박을 완화하여, 심리적 불안으로 심화된 신체 통증을 제어하고 수면의 질을 개선하기 위해 처방함.'},
+  {g:'심신 및 스트레스 관련군',name:'가미소요산가감',ingr:'*당귀2 작약2 치자1 목단피1 감초1 박하1 생강1 대조1',
+   bj:'간기울결(肝氣鬱結) 및 상열(上熱), 지속적인 통증과 사고 스트레스로 인해 흉협 고만, 상열감, 예민함을 보이며 근육 강직이 심화됨. 박하의 소간해울(疏肝解鬱) 기능으로 뭉친 기운을 풀고 치자·목단피로 스트레스성 열을 내려, 심리적 요인에 의한 근육의 비정상적 긴장을 해소하기 위해 처방함.'},
+  {g:'심신 및 스트레스 관련군',name:'시령탕가감',ingr:'*반하2 시호1 저령1 황금1 감초1 계지1 생강1 대조1 택사1',
+   bj:'소양병(少陽病) 간울증, 사고 후 스트레스로 인한 흉협부 답답함, 구역감과 함께 전신 부종 및 대사 저하를 동시에 호소함. 시호·황금으로 반표반리(半表半裏)의 열과 스트레스를 다스리고 오령산의 이수 기전을 통해 수독을 배출하여, 심신 증상과 대사 장애를 복합적으로 관리하기 위해 처방함.'},
+];
+
+const HERB_ADD=[
+  {div:1,name:'도인',desc:'파어(破瘀) 효능으로 고정된 부위의 예리한 통증 완화 효과가 있는 도인을 어혈성 자통(刺痛) 및 미세 혈전 제거 위해 가함.'},
+  {div:1,name:'현호색',desc:'활혈산어(活血散瘀) 기전으로 강력한 진통 효과가 있는 현호색을 사고 직후의 극심한 통증 제어 및 기체성 통증 완화 위해 가함.'},
+  {div:1,name:'목단피',desc:'혈분의 열을 내리고 어혈을 삭히는 청열양혈(淸熱凉血) 효과가 있는 목단피를 야간에 심해지는 통증 및 혈류 정체로 인한 국소 열감 해소 위해 가함.'},
+  {div:1,name:'애엽',desc:'경락을 데워 어혈을 삭히고 지혈 작용을 돕는 애엽을 하초의 냉성 통증 완화 및 사고 후 하복부 기순환 촉진 위해 가함.'},
+  {div:1,name:'속단',desc:'끊어진 근골을 잇고 간신을 보하는 속단을 사고로 손상된 근육, 인대 조직의 빠른 수복 및 관절 결합력 강화 위해 가함.'},
+  {div:1,name:'위령선',desc:'경락을 소통시켜 풍습을 제거하는 위령선을 신체 여기저기 쑤시고 돌아다니는 유주성 통증 및 관절의 뻑뻑함 해소 위해 가함.'},
+  {div:1,name:'독활',desc:'하반신의 풍습을 제거하고 통증을 멎게 하는 독활을 요추 이하 하지의 신경통, 저림 증상 및 묵직한 중압감 제어 위해 가함.'},
+  {div:1,name:'세신',desc:'경락을 온화하게 하여 찬 기운을 몰아내는 세신을 신경 압박으로 인한 저림, 시린 통증 및 냉성 기체 상태 소통 위해 가함.'},
+  {div:1,name:'갈근',desc:'근육의 진액을 보충하고 겉을 푸는 해기(解肌) 효능이 있는 갈근을 경추부 항강증(뻣뻣함) 해소 및 상부 근육 유연성 확보 위해 가함.'},
+  {div:1,name:'두충',desc:'간신을 보하여 뼈와 인대를 튼튼하게 하는 두충을 사고 충격으로 약해진 요추의 지지력 강화 및 만성 요통 예방 위해 가함.'},
+  {div:1,name:'강활',desc:'상체의 풍습을 제거하고 통증을 뚫어주는 강활을 어깨와 팔 주변 경락의 막힌 통증 해소 및 약효의 상행 유도 위해 가함.'},
+  {div:1,name:'우슬',desc:'혈류를 아래로 이끌고 근골을 강화하는 우슬을 하지 관절의 어혈 제거, 무릎 통증 완화 및 약효의 하행 유도 위해 가함.'},
+  {div:2,name:'황금',desc:'상초의 열을 내리고 염증을 억제하는 황금을 사고 후 환부의 발열, 부종 및 급성 염증 반응 진정 위해 가함.'},
+  {div:2,name:'황련',desc:'심장의 화기를 내리고 신경을 진정시키는 황련을 화기로 인해 예민해진 통증 감각 저하 및 국소 염증성 열감 소생 위해 가함.'},
+  {div:2,name:'박하',desc:'상부의 열을 흩뜨리고 기운을 소통시키는 박하를 스트레스성 두통 완화 및 흉격의 답답한 기운 해소 위해 가함.'},
+  {div:2,name:'형개',desc:'체표의 독소를 해독하고 혈액 내 염증을 다스리는 형개를 타박 부위의 어혈성 염증 진정 및 기혈 순환 촉진 위해 가함.'},
+  {div:2,name:'시호',desc:'뭉친 간기를 풀어주는 소간해울(疏肝解鬱) 효능의 시호를 스트레스성 근육 강직 완화 및 흉협부(옆구리) 답답함 해소 위해 가함.'},
+  {div:2,name:'맥문동',desc:'진액을 보충하고 가슴의 번열을 내리는 맥문동을 사고 후 입마름, 화끈거리는 통증 및 신경 과민 상태 안정을 위해 가함.'},
+  {div:2,name:'의이인',desc:'근육 내 습담을 배출하고 염증을 다스리는 의이인을 사고 후 발생하는 신체 무력감, 부종 제거 및 근육 경련 완화 위해 가함.'},
+  {div:2,name:'택사',desc:'수분 대사를 촉진하여 부기를 빼주는 택사를 신속한 전신 부종 해소 및 하초의 수습 정체로 인한 중압감 제거 위해 가함.'},
+  {div:2,name:'복령',desc:'비위를 튼튼히 하고 수분을 배출하는 복령을 사고 후 발생하는 전신 부종 완화 및 심신 안정 효과 도모 위해 가함.'},
+  {div:2,name:'반하',desc:'체내 비정상적인 체액인 담음을 삭히는 반하를 사고 후 어지럼증, 구역감 해소 및 정체된 기운의 하행 유도 위해 가함.'},
+  {div:3,name:'오약',desc:'막힌 기운을 뚫고 통증을 멈추게 하는 오약을 사고 스트레스로 인한 예리한 복통, 요통 및 기체성 통증 소통 위해 가함.'},
+  {div:3,name:'향부자',desc:'전신의 기순환을 돕는 이기(理氣)의 성약인 향부자를 흉협부의 답답함, 옆구리 결림 및 울체된 기운의 소통 위해 가함.'},
+  {div:3,name:'길경',desc:'기운을 상부로 끌어올리고 흉격을 여는 길경을 경추 및 어깨 통증 치료 효율 극대화 및 약효의 상초 유도 위해 가함.'},
+  {div:3,name:'사인',desc:'소화기의 습기를 말리고 기순환을 돕는 사인을 사고 후 소화 불량 개선 및 한약 성분의 흡수율 증진을 위해 가함.'},
+  {div:3,name:'건강',desc:'속을 따뜻하게 하여 순환의 원동력을 제공하는 건강을 전신 냉증 개선, 혈류량 증가 및 찬 기운으로 수축된 근육 이완 위해 가함.'},
+  {div:3,name:'부자',desc:'양기를 강하게 보하고 막힌 경락을 데우는 부자를 심부 오한 해소, 시린 통증 차단 및 만성적 냉성 통증 제어 위해 가함.'},
+  {div:3,name:'대복피',desc:'장관의 기순환을 돕고 배변을 원활히 하는 대복피를 하복부 팽만감 해소 및 체내 노폐물의 신속한 배출 위해 가함.'},
+  {div:3,name:'황기',desc:'체표의 기운을 보하고 조직 재생을 돕는 황기를 사고 후 급격한 기력 저하 방지 및 손상 부위의 면역 강화 위해 가함.'},
+  {div:3,name:'천궁',desc:'혈액과 기운을 동시에 돌리는 천궁을 두면부의 어혈성 통증(두통) 해소 및 전신 혈류 순환 촉진 위해 가함.'},
+  {div:3,name:'인삼',desc:'대보원기(大補元氣) 효능이 탁월한 인삼을 사고 충격으로 저하된 전신 기력 보강 및 자가 회복력 극대화를 위해 가함.'},
+  {div:3,name:'숙지황',desc:'혈액을 보충하고 정수를 채우는 숙지황을 외상으로 손상된 정혈(精血) 보충 및 근육·인대의 영양 공급 위해 가함.'},
+];
+
+const DIV_NAMES={1:'분류 1 — 어혈·통증 완화 / 근골 강화',2:'분류 2 — 염증·스트레스 안정 / 이수화담',3:'분류 3 — 기순환·소화계 보강'};
+const DIV_COLORS={1:'sel',2:'sel2',3:'sel3'};
+
+let herbState={rx:null,add:[]};
+
+function herbOpen(){
+  document.getElementById('herbStep1').classList.add('active');
+  document.getElementById('herbStep2').classList.remove('active');
+  renderHerbStep1();
+  document.getElementById('herbOverlay').classList.add('open');
+}
+function herbClose(){
+  document.getElementById('herbOverlay').classList.remove('open');
+}
+function herbOC(e){if(e.target===document.getElementById('herbOverlay'))herbClose();}
+
+function renderHerbStep1(){
+  const list=document.getElementById('herbRxList');
+  const groups=[...new Set(HERB_RX.map(r=>r.g))];
+  list.innerHTML=groups.map(g=>{
+    const rxs=HERB_RX.filter(r=>r.g===g);
+    return`<div class="herb-group-title">${g}</div>`+rxs.map(r=>`
+      <button class="herb-rx-btn${herbState.rx===r.name?' sel':''}" onclick="selectRx('${r.name}')">
+        <div class="herb-rx-name">${r.name}</div>
+        <div class="herb-rx-ingr">${r.ingr}</div>
+      </button>`).join('');
+  }).join('');
+  document.getElementById('herbStep1Next').disabled=!herbState.rx;
+}
+function selectRx(name){
+  herbState.rx=name;
+  // 처방이 바뀌면 새 처방과 중복되는 가감 약재 제거
+  const newIngr=getRxIngredients();
+  herbState.add=herbState.add.filter(a=>!newIngr.has(a.name));
+  document.querySelectorAll('.herb-rx-btn').forEach(b=>b.classList.toggle('sel',b.querySelector('.herb-rx-name').textContent===name));
+  document.getElementById('herbStep1Next').disabled=false;
+}
+function herbGoStep2(){
+  document.getElementById('herbStep1').classList.remove('active');
+  document.getElementById('herbStep2').classList.add('active');
+  renderHerbStep2();
+}
+function herbGoStep1(){
+  document.getElementById('herbStep2').classList.remove('active');
+  document.getElementById('herbStep1').classList.add('active');
+  renderHerbStep1();
+}
+function getRxIngredients(){
+  // 선택된 처방의 구성약재 이름 추출 (예: '*계지2 작약2' → ['계지','작약'])
+  if(!herbState.rx) return new Set();
+  const rx=HERB_RX.find(r=>r.name===herbState.rx);
+  if(!rx) return new Set();
+  return new Set(
+    rx.ingr.replace(/\*/g,'').split(/\s+/).map(t=>t.replace(/[\d.]+$/,'').trim()).filter(Boolean)
+  );
+}
+
+function renderHerbStep2(){
+  updateHerbSelInfo();
+  const rxIngr=getRxIngredients(); // 처방에 이미 있는 약재
+  const list=document.getElementById('herbAddList');
+  list.innerHTML=[1,2,3].map(d=>`
+    <div class="herb-div-title">${DIV_NAMES[d]}</div>
+    <div class="herb-add-grid">${HERB_ADD.filter(a=>a.div===d).map(a=>{
+      const isSel=herbState.add.find(x=>x.name===a.name);
+      const isDup=rxIngr.has(a.name); // 처방에 이미 포함된 약재
+      const cls=isDup?'herb-add-btn herb-add-dup':('herb-add-btn'+(isSel?' '+DIV_COLORS[d]:''));
+      const title=isDup?`${a.name}은(는) 처방에 이미 포함된 약재입니다`:'';
+      return`<button class="${cls}" onclick="${isDup?'':'toggleHerbAdd('+d+',\''+a.name+'\')'}" title="${title}">${a.name}${isDup?' <span style="font-size:9px;opacity:.6;">✕중복</span>':''}</button>`;
+    }).join('')}</div>`).join('');
+}
+function toggleHerbAdd(div,name){
+  const rxIngr=getRxIngredients();
+  if(rxIngr.has(name)) return; // 처방 내 약재는 선택 불가
+  const idx=herbState.add.findIndex(x=>x.name===name);
+  if(idx>=0){herbState.add.splice(idx,1);}
+  else{
+    herbState.add=herbState.add.filter(x=>x.div!==div);
+    herbState.add.push({div,name});
+  }
+  renderHerbStep2();
+  updateHerbConfirmBtn();
+}
+function updateHerbSelInfo(){
+  const divs=[...new Set(herbState.add.map(x=>x.div))];
+  const names=herbState.add.map(x=>x.name).join(', ');
+  const el=document.getElementById('herbSelInfo');
+  el.textContent=herbState.add.length?`선택된 가감: ${names} (${herbState.add.length}종, ${divs.length}개 분류)`:'가감 약재를 2개 분류에서 각 1개씩 선택하세요.';
+  updateHerbConfirmBtn();
+}
+function updateHerbConfirmBtn(){
+  const divs=[...new Set(herbState.add.map(x=>x.div))];
+  document.getElementById('herbStep2Confirm').disabled=herbState.add.length!==2||divs.length!==2;
+}
+function herbConfirmLater(){
+  herbState.add=[];
+  herbState.later=true;
+  const chip=document.querySelector('.act-chip[data-val="첩약"]');
+  if(chip)chip.classList.add('active');
+  herbClose();
+  render();
+}
+function herbConfirm(){
+  herbState.later=false;
+  // 첩약 칩 활성화
+  const chip=document.querySelector('.act-chip[data-val="첩약"]');
+  if(chip)chip.classList.add('active');
+  herbClose();
+  render();
+}
+function setIctOut(n){ictOutCount=(ictOutCount===n)?0:n;document.getElementById('ict-out-1').classList.toggle('active',ictOutCount===1);document.getElementById('ict-out-2').classList.toggle('active',ictOutCount===2);trimPT('out',ictOutCount||1);render();}
+function ptCnt(s){return Object.keys(ptState[s]).length;}
+function trimPT(s,mx){const ks=Object.keys(ptState[s]);if(ks.length>mx){ks.slice(mx).forEach(k=>{delete ptState[s][k];const g=s==='out'?'outBodyChips':s==='am'?'inBodyAM':'inBodyPM';const c=document.querySelector(`#${g} [data-key="${k}"]`);if(c)upc(c,s);});}}
+function handlePTBody(el,s){const k=el.dataset.key;const bi=el.dataset.bi==='1';const mx=(s==='out')?(ictOutCount||1):1;if(bi){ptPS=s;ptPK=k;ptPEl=el;ptPSide=ptState[s][k]||null;document.getElementById('ptPopTitle').textContent=k;document.querySelectorAll('#ptOverlay .pop-btn').forEach(b=>b.classList.toggle('sel',b.dataset.side===ptPSide));document.getElementById('ptOverlay').classList.add('open');}else{if(ptState[s][k]){delete ptState[s][k];upc(el,s);}else{if(ptCnt(s)>=mx)trimPT(s,mx-1);ptState[s][k]=true;upc(el,s);}render();}}
+function upc(el,s){const k=el.dataset.key;const st=ptState[s][k];const o=el.querySelector('.pt-side-badge');if(o)o.remove();if(!st){el.classList.remove('active');}else{el.classList.add('active');if(typeof st==='string'){const b=document.createElement('span');b.className='pt-side-badge';b.textContent=st==='Both'?'양':st;el.appendChild(b);}}}
+function ptOC(e){if(e.target===document.getElementById('ptOverlay'))ptCP();}
+function ptSS(b){ptPSide=(ptPSide===b.dataset.side)?null:b.dataset.side;document.querySelectorAll('#ptOverlay .pop-btn').forEach(x=>x.classList.toggle('sel',x.dataset.side===ptPSide));}
+function ptCP(){document.getElementById('ptOverlay').classList.remove('open');ptPK=null;ptPSide=null;ptPEl=null;ptPS=null;}
+function ptCF(){if(ptPK&&ptPS){const s=ptPS,k=ptPK,el=ptPEl,mx=(s==='out')?(ictOutCount||1):1;if(ptPSide){if(!ptState[s][k]&&ptCnt(s)>=mx)trimPT(s,mx-1);ptState[s][k]=ptPSide;}else delete ptState[s][k];if(el)upc(el,s);render();}ptCP();}
+
+// ── C/C ──
+function toggleCC(header, key){
+  header.classList.toggle('active');
+  render();
+}
+
+// ── C/C — NRS · ROM ──
+// 정상범위: AAOS(American Academy of Orthopaedic Surgeons) 기준, 단위 °
+// 경추·사지: AAOS 1965 "Joint Motion: Method of Measuring and Recording" 인용 자료와 대조함
+// 흉요추: AAOS 표기 자료(학습용 정리본) 기준 — 원본 대조 권장
+// n: 정상 최대각, lr: 좌/우 따로 입력(척추 측굴·회전), side: 사지 관절 — 모든 동작 Lt/Rt 두 칸, 출력은 측별로 묶음
+const ROM_DATA={
+  '경항부':[
+    {joint:'경추',side:false,moves:[
+      {id:'flex',name:'굴곡',n:45},{id:'ext',name:'신전',n:45},
+      {id:'lat',name:'측굴',n:45,lr:true},{id:'rot',name:'회전',n:60,lr:true}]},
+  ],
+  '요배부':[
+    {joint:'흉요추',side:false,moves:[
+      {id:'flex',name:'굴곡',n:80},{id:'ext',name:'신전',n:25},
+      {id:'lat',name:'측굴',n:35,lr:true},{id:'rot',name:'회전',n:45,lr:true}]},
+  ],
+  '상지부':[
+    {joint:'어깨',side:true,moves:[
+      {id:'flex',name:'굴곡',n:180},{id:'ext',name:'신전',n:60},
+      {id:'abd',name:'외전',n:180},{id:'add',name:'내전',n:40},
+      {id:'er',name:'외회전',n:90},{id:'ir',name:'내회전',n:70}]},
+    {joint:'팔꿈치',side:true,moves:[
+      {id:'flex',name:'굴곡',n:150},{id:'ext',name:'신전',n:0}]},
+    {joint:'전완',side:true,moves:[
+      {id:'pro',name:'회내',n:80},{id:'sup',name:'회외',n:80}]},
+    {joint:'손목',side:true,moves:[
+      {id:'flex',name:'굴곡',n:80},{id:'ext',name:'신전',n:70},
+      {id:'rd',name:'요측편위',n:20},{id:'ud',name:'척측편위',n:30}]},
+  ],
+  '하지부':[
+    {joint:'고관절',side:true,moves:[
+      {id:'flex',name:'굴곡',n:120},{id:'ext',name:'신전',n:30},
+      {id:'abd',name:'외전',n:45},{id:'add',name:'내전',n:30},
+      {id:'er',name:'외회전',n:45},{id:'ir',name:'내회전',n:45}]},
+    {joint:'무릎',side:true,moves:[
+      {id:'flex',name:'굴곡',n:135},{id:'ext',name:'신전',n:0}]},
+    {joint:'발목',side:true,moves:[
+      {id:'df',name:'배굴',n:20},{id:'pf',name:'저굴',n:50},
+      {id:'inv',name:'내번',n:35},{id:'ev',name:'외번',n:15}]},
+  ],
+};
+// ── 이학적검사 목록 — lr: 좌/우 따로 기록, deg: 각도 입력 가능
+const PE_DATA={
+  '경항부':[
+    {group:'경추',tests:[
+      {id:'spurling',name:'Spurling',lr:true},{id:'distraction',name:'Distraction'},
+      {id:'jackson',name:'Jackson compression',lr:true},{id:'valsalva',name:'Valsalva'},
+      {id:'adson',name:'Adson',lr:true},{id:'bakody',name:'Shoulder abduction(Bakody)',lr:true}]},
+  ],
+  '요배부':[
+    {group:'요추·골반',tests:[
+      {id:'slr',name:'SLR',lr:true,deg:true},{id:'bragard',name:'Bragard',lr:true},
+      {id:'wlr',name:'Well-leg raise',lr:true,deg:true},{id:'patrick',name:'Patrick(FABER)',lr:true},
+      {id:'gaenslen',name:'Gaenslen',lr:true},{id:'kemp',name:'Kemp',lr:true},
+      {id:'milgram',name:'Milgram'},{id:'valsalva',name:'Valsalva'}]},
+    {group:'반사',tests:[
+      {id:'ptr',name:'Patellar reflex',lr:true},{id:'atr',name:'Achilles reflex',lr:true}]},
+  ],
+  '흉복부':[
+    {group:'흉곽',tests:[
+      {id:'ribcomp',name:'Rib compression',lr:true}]},
+  ],
+  '상지부':[
+    {group:'어깨',tests:[
+      {id:'neer',name:'Neer',lr:true},{id:'hawkins',name:'Hawkins-Kennedy',lr:true},
+      {id:'emptycan',name:'Empty can(Jobe)',lr:true},{id:'droparm',name:'Drop arm',lr:true},
+      {id:'speed',name:'Speed',lr:true},{id:'yergason',name:'Yergason',lr:true},
+      {id:'apprehension',name:'Apprehension',lr:true}]},
+    {group:'팔꿈치',tests:[
+      {id:'cozen',name:'Cozen',lr:true},{id:'golfer',name:"Golfer's elbow",lr:true}]},
+    {group:'손목',tests:[
+      {id:'phalen',name:'Phalen',lr:true},{id:'tinel',name:'Tinel(손목)',lr:true},
+      {id:'finkelstein',name:'Finkelstein',lr:true}]},
+  ],
+  '하지부':[
+    {group:'고관절',tests:[
+      {id:'patrick',name:'Patrick(FABER)',lr:true},{id:'fadir',name:'FADIR',lr:true},
+      {id:'thomas',name:'Thomas',lr:true}]},
+    {group:'무릎',tests:[
+      {id:'kad',name:'Anterior drawer(무릎)',lr:true},{id:'kpd',name:'Posterior drawer(무릎)',lr:true},
+      {id:'lachman',name:'Lachman',lr:true},{id:'mcmurray',name:'McMurray',lr:true},
+      {id:'valgus',name:'Valgus stress',lr:true},{id:'varus',name:'Varus stress',lr:true},
+      {id:'apley',name:'Apley compression',lr:true}]},
+    {group:'발목',tests:[
+      {id:'aad',name:'Anterior drawer(발목)',lr:true},{id:'talartilt',name:'Talar tilt',lr:true},
+      {id:'thompson',name:'Thompson',lr:true}]},
+  ],
+};
+const PE_RES=[{v:'+',cls:'pos'},{v:'−',cls:'neg'},{v:'±',cls:'eq'}];
+// ccExtra[C/C key] = {nrs:null|0~10, rom:{[joint]:{m:{[moveId]:'각도' | {L:'',R:''}}}}, pe:{[testId]:{r,d} | {L:{r,d},R:{r,d}}}}
+const ccExtra={};
+function getCCExtra(key){if(!ccExtra[key])ccExtra[key]={nrs:null,rom:{},pe:{}};if(!ccExtra[key].pe)ccExtra[key].pe={};return ccExtra[key];}
+let peKey=null,peDraft=null;
+let romKey=null,romDraft=null;
+
+function initCCExtra(){
+  document.querySelectorAll('#ccList .cc-item').forEach(item=>{
+    const key=item.dataset.key;
+    const detail=item.querySelector('.cc-detail');
+    if(!detail||detail.querySelector('.cc-extra'))return;
+    const hasRom=!!ROM_DATA[key];
+    const hasPe=!!PE_DATA[key];
+    const wrap=document.createElement('div');
+    wrap.innerHTML=
+      `<div class="cc-extra">
+        <span class="cc-extra-btn" data-role="nrs" onclick="toggleNrsRow(this)">NRS</span>
+        ${hasRom?'<span class="cc-extra-btn" data-role="rom" onclick="openRom(this)">ROM</span>':''}
+        ${hasPe?'<span class="cc-extra-btn" data-role="pe" onclick="openPe(this)">이학적검사</span>':''}
+      </div>
+      <div class="nrs-row">${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<span class="nrs-chip" data-n="${n}" onclick="setNrs(this,${n})">${n}</span>`).join('')}</div>
+      ${hasRom?'<div class="rom-summary"></div>':''}
+      ${hasPe?'<div class="rom-summary pe-summary"></div>':''}`;
+    while(wrap.firstChild)detail.appendChild(wrap.firstChild);
+  });
+}
+function toggleNrsRow(btn){
+  const row=btn.closest('.cc-detail').querySelector('.nrs-row');
+  if(row)row.classList.toggle('open');
+}
+function setNrs(chip,n){
+  const item=chip.closest('.cc-item');
+  const ex=getCCExtra(item.dataset.key);
+  ex.nrs=(ex.nrs===n)?null:n;
+  const row=item.querySelector('.nrs-row');
+  if(row)row.classList.remove('open');
+  updateCCExtraUI(item);
+  render();
+}
+function updateCCExtraUI(item){
+  const key=item.dataset.key;
+  const ex=getCCExtra(key);
+  item.querySelectorAll('.nrs-chip').forEach(c=>c.classList.toggle('active',Number(c.dataset.n)===ex.nrs));
+  const nb=item.querySelector('.cc-extra-btn[data-role="nrs"]');
+  if(nb){nb.textContent=ex.nrs===null?'NRS':`NRS ${ex.nrs}`;nb.classList.toggle('has-val',ex.nrs!==null);}
+  const rb=item.querySelector('.cc-extra-btn[data-role="rom"]');
+  const sum=item.querySelector('.rom-summary:not(.pe-summary)');
+  const romTxt=getRomText(key);
+  if(rb)rb.classList.toggle('has-val',!!romTxt);
+  if(sum)sum.textContent=romTxt;
+  const pb=item.querySelector('.cc-extra-btn[data-role="pe"]');
+  const psum=item.querySelector('.pe-summary');
+  const peTxt=getPeText(key);
+  if(pb)pb.classList.toggle('has-val',!!peTxt);
+  if(psum)psum.textContent=peTxt?'PE: '+peTxt:'';
+}
+function romNum(v){return String(v==null?'':v).replace(/[^0-9.\-]/g,'');}
+function romValid(d){return d!==''&&!isNaN(Number(d));}
+// ROM 출력 문자열 — 각도가 입력된 동작만 포함
+function getRomText(key){
+  const defs=ROM_DATA[key];if(!defs)return'';
+  const rom=getCCExtra(key).rom;
+  const parts=[];
+  defs.forEach(J=>{
+    const st=rom[J.joint];if(!st)return;
+    if(J.side){ // 사지: 측별로 묶어서 출력
+      ['L','R'].forEach(sd=>{
+        const mv=[];
+        J.moves.forEach(M=>{
+          const v=st.m[M.id];if(!v||typeof v!=='object')return;
+          const d=romNum(v[sd]);
+          if(romValid(d))mv.push(`${M.name} ${d}°(${M.n})`);
+        });
+        if(mv.length)parts.push(`${sd==='L'?'Lt':'Rt'} ${J.joint} ${mv.join(' ')}`);
+      });
+      return;
+    }
+    const mv=[];
+    J.moves.forEach(M=>{
+      const v=st.m[M.id];if(v===undefined)return;
+      if(M.lr){
+        const L=romNum(v.L),R=romNum(v.R);
+        if(romValid(L))mv.push(`Lt${M.name} ${L}°(${M.n})`);
+        if(romValid(R))mv.push(`Rt${M.name} ${R}°(${M.n})`);
+      } else {
+        const d=romNum(v);
+        if(romValid(d))mv.push(`${M.name} ${d}°(${M.n})`);
+      }
+    });
+    if(mv.length)parts.push(mv.join(' '));
+  });
+  return parts.join(' / ');
+}
+function getCCExtraLines(key){
+  const ex=ccExtra[key];if(!ex)return[];
+  const out=[];
+  if(ex.nrs!==null)out.push(`NRS ${ex.nrs}`);
+  const r=getRomText(key);
+  if(r)out.push(`ROM: ${r}`);
+  const pe=getPeText(key);
+  if(pe)out.push(`PE: ${pe}`);
+  return out;
+}
+// 이학적검사 출력 — 결과가 선택된 검사만 포함 (예: SLR Lt(−) Rt(+) 45°)
+function getPeText(key){
+  const defs=PE_DATA[key];if(!defs)return'';
+  const pe=getCCExtra(key).pe;
+  const parts=[];
+  const one=(o,sd)=>{
+    if(!o||!o.r)return'';
+    const d=romNum(o.d);
+    return`${sd}(${o.r})${romValid(d)?' '+d+'°':''}`;
+  };
+  defs.forEach(G=>G.tests.forEach(T=>{
+    const v=pe[T.id];if(!v)return;
+    if(T.lr){
+      const segs=[one(v.L,'Lt'),one(v.R,'Rt')].filter(Boolean);
+      if(segs.length)parts.push(`${T.name} ${segs.join(' ')}`);
+    } else {
+      const seg=one(v,'');
+      if(seg)parts.push(T.name+seg);
+    }
+  }));
+  return parts.join(', ');
+}
+function openPe(btn){
+  const item=btn.closest('.cc-item');
+  peKey=item.dataset.key;
+  peDraft=JSON.parse(JSON.stringify(getCCExtra(peKey).pe));
+  const label=item.querySelector('.cc-label')?.textContent.trim()||peKey;
+  document.getElementById('pePopTitle').textContent=`이학적검사 — ${label}`;
+  renderPeBody();
+  document.getElementById('peOverlay').classList.add('open');
+}
+function peTest(gi,ti){return PE_DATA[peKey][gi].tests[ti];}
+function renderPeBody(){
+  const body=document.getElementById('peBody');
+  const defs=PE_DATA[peKey]||[];
+  body.innerHTML=defs.map((G,gi)=>{
+    const rows=G.tests.map((T,ti)=>{
+      const v=peDraft[T.id];
+      const on=v!==undefined;
+      let ctrl='';
+      if(on){
+        const side=(o,sd)=>{
+          const chips=PE_RES.map(R=>`<span class="pe-chip ${R.cls}${o&&o.r===R.v?' active':''}" onclick="peSetRes(${gi},${ti},'${sd}','${R.v}')">${R.v}</span>`).join('');
+          const deg=T.deg?` <input type="text" inputmode="decimal" class="rom-deg pe-deg" value="${romNum(o?.d)}" placeholder="°" oninput="peSetDeg(${gi},${ti},'${sd}',this)">°`:'';
+          const lb=sd==='L'?'Lt ':sd==='R'?'Rt ':'';
+          return`<span class="pe-side">${lb}<span class="pe-res">${chips}</span>${deg}</span>`;
+        };
+        ctrl=T.lr?side(v.L,'L')+side(v.R,'R'):side(v,'');
+      }
+      return`<div class="rom-move"><label><input type="checkbox"${on?' checked':''} onchange="peToggle(${gi},${ti},this.checked)">${T.name}</label>${ctrl}</div>`;
+    }).join('');
+    return`<div class="rom-joint"><div class="rom-joint-head"><span class="rom-joint-name">${G.group}</span></div>${rows}</div>`;
+  }).join('');
+}
+function peToggle(gi,ti,on){
+  const T=peTest(gi,ti);
+  if(on)peDraft[T.id]=T.lr?{L:{r:'',d:''},R:{r:'',d:''}}:{r:'',d:''};
+  else delete peDraft[T.id];
+  renderPeBody();
+}
+function peSlot(T,sd){const v=peDraft[T.id];return T.lr?v[sd]:v;}
+function peSetRes(gi,ti,sd,r){
+  const T=peTest(gi,ti);if(!peDraft[T.id])return;
+  const o=peSlot(T,sd);
+  o.r=(o.r===r)?'':r;
+  renderPeBody();
+}
+function peSetDeg(gi,ti,sd,el){
+  const T=peTest(gi,ti);if(!peDraft[T.id])return;
+  peSlot(T,sd).d=romNum(el.value);
+}
+function peClear(){peDraft={};renderPeBody();}
+function peCP(){document.getElementById('peOverlay').classList.remove('open');peKey=null;peDraft=null;}
+function peOC(e){if(e.target===document.getElementById('peOverlay'))peCP();}
+function peCF(){
+  if(peKey){
+    getCCExtra(peKey).pe=peDraft||{};
+    const item=document.querySelector(`#ccList .cc-item[data-key="${peKey}"]`);
+    if(item)updateCCExtraUI(item);
+  }
+  peCP();
+  render();
+}
+function openRom(btn){
+  const item=btn.closest('.cc-item');
+  romKey=item.dataset.key;
+  romDraft=JSON.parse(JSON.stringify(getCCExtra(romKey).rom));
+  const label=item.querySelector('.cc-label')?.textContent.trim()||romKey;
+  document.getElementById('romPopTitle').textContent=`ROM — ${label}`;
+  renderRomBody();
+  document.getElementById('romOverlay').classList.add('open');
+}
+function renderRomBody(){
+  const body=document.getElementById('romBody');
+  const defs=ROM_DATA[romKey]||[];
+  body.innerHTML=defs.map((J,ji)=>{
+    const st=romDraft[J.joint]||{m:{}};
+    const rows=J.moves.map((M,mi)=>{
+      const v=st.m[M.id];
+      const on=v!==undefined;
+      const norm=M.n===0?'정상 0°':`정상 0~${M.n}°`;
+      let inputs='';
+      if(on){
+        const inp=(val,sd)=>{
+          const d=romNum(val);
+          const low=romValid(d)&&Number(d)<M.n;
+          return`<input type="text" inputmode="decimal" class="rom-deg${low?' low':''}" value="${d}" placeholder="°" oninput="romSetDeg(${ji},${mi},'${sd}',this)">`;
+        };
+        inputs=(M.lr||J.side)
+          ?`<span class="rom-deg-wrap">Lt ${inp(v.L,'L')}° &nbsp;Rt ${inp(v.R,'R')}°</span>`
+          :`<span class="rom-deg-wrap">${inp(v,'')}°</span>`;
+      }
+      return`<div class="rom-move"><label><input type="checkbox"${on?' checked':''} onchange="romToggle(${ji},${mi},this.checked)">${M.name}</label><span class="rom-norm">${norm}</span>${inputs}</div>`;
+    }).join('');
+    return`<div class="rom-joint"><div class="rom-joint-head"><span class="rom-joint-name">${J.joint}</span></div>${rows}</div>`;
+  }).join('');
+}
+function romState(ji){
+  const J=ROM_DATA[romKey][ji];
+  if(!romDraft[J.joint])romDraft[J.joint]={m:{}};
+  return romDraft[J.joint];
+}
+function romToggle(ji,mi,on){
+  const J=ROM_DATA[romKey][ji],M=J.moves[mi];
+  const st=romState(ji);
+  if(on)st.m[M.id]=(M.lr||J.side)?{L:'',R:''}:'';
+  else delete st.m[M.id];
+  renderRomBody();
+  if(on){ // 방금 체크한 동작의 첫 입력칸에 포커스
+    const rows=document.querySelectorAll('#romBody .rom-joint')[ji]?.querySelectorAll('.rom-move');
+    rows?.[mi]?.querySelector('.rom-deg')?.focus();
+  }
+}
+function romSetDeg(ji,mi,sd,el){
+  const J=ROM_DATA[romKey][ji],M=J.moves[mi];
+  const st=romState(ji);
+  const d=romNum(el.value);
+  if(M.lr||J.side){if(typeof st.m[M.id]!=='object')st.m[M.id]={L:'',R:''};st.m[M.id][sd]=d;}
+  else st.m[M.id]=d;
+  el.classList.toggle('low',romValid(d)&&Number(d)<M.n);
+}
+function romClear(){romDraft={};renderRomBody();}
+function romCP(){document.getElementById('romOverlay').classList.remove('open');romKey=null;romDraft=null;}
+function romOC(e){if(e.target===document.getElementById('romOverlay'))romCP();}
+function romCF(){
+  if(romKey){
+    getCCExtra(romKey).rom=romDraft||{};
+    const item=document.querySelector(`#ccList .cc-item[data-key="${romKey}"]`);
+    if(item)updateCCExtraUI(item);
+  }
+  romCP();
+  render();
+}
+
+// ── 날짜 유틸 ──
+function pd(s){if(!s)return null;const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
+function fd(d){return`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;}
+function fm(d){return`${d.getMonth()+1}/${d.getDate()}`;}  // M/D 형식
+function ad(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+// ── 출력 ──
+function getDeadline(){
+  if(chartMode==='gb'){
+    if(gbDeadlineMode==='later') return 'later';
+    if(gbDeadlineMode==='auto'){
+      // 초진일(입원일) 기준 2주
+      const fv=pd(document.getElementById('firstVisitDateGB')?.value||'');
+      return fv?ad(fv,13):null;
+    }
+    // pick 모드
+    const d=pd(document.getElementById('gbDeadlinePick')?.value||'');
+    return d||null;
+  }
+  const d=pd(document.getElementById('injuryDate').value);
+  if(!d)return null;
+  if(taDeadlineMode==='fracture'&&taFxWeeks) return ad(d,taFxWeeks*7-1);
+  return ad(d,6);
+}
+// 부위 한글→영문 약어 매핑
+const PT_MAP={'경추부':'목','흉추부':'등','요추부':'허리','견관절':'어깨','주관절':'팔꿈치','수관절':'손목','고관절':'고관절(엉덩이)','슬관절':'무릎','족관절':'발목','늑골부':'늑골'};
+const XR_MAP={'C-spine':'C-spine','L-spine':'L-spine','Pelvis':'Pelvis','Shoulder':'shoulder','Elbow':'elbow','Wrist':'wrist','Knee':'knee','Ankle':'ankle','Rib':'rib'};
+
+function getPTShort(session){
+  const e=Object.entries(ptState[session]);
+  if(!e.length)return'미선택';
+  return e.map(([k,v])=>{
+    const name=PT_MAP[k]||k;
+    if(v===true)return name;
+    if(v==='Both')return'양측'+name;
+    return v+name;
+  }).join(',');
+}
+function getXRShort(k,s){
+  const name=XR_MAP[k]||k;
+  if(s===true)return name;
+  if(s==='Both')return'both '+name;
+  return s+' '+name;
+}
+function fmtDeadline(d){if(!d)return'미입력';if(d==='later')return'추후 지정';return(String(d.getFullYear()).slice(2)+'.'+(d.getMonth()+1)+'.'+d.getDate()+'.');}
+
+function buildLines(){
+  if(chartMode==='gb') return buildLinesGB();
+  const name=document.getElementById('patientName').value.trim()||'OOO';
+  const al=[];document.querySelectorAll('.act-chip.active').forEach(el=>{
+    if(!el.dataset.val) return; // tx2 시간칩 등 val 없는 칩 제외
+    if(el.dataset.val==='첩약'){
+      if(herbState.later) al.push('첩약(추후선택)');
+      else if(herbState.rx) al.push(herbState.rx);
+      else al.push('첩약');
+    } else {
+      al.push(el.dataset.val);
+    }
+  });
+  // 침치료만 활성 시 다른 항목 제거
+  if(al.includes('침치료만')){
+    al.length=0; al.push('침치료만');
+  }
+  const dl=getDeadline();
+
+  // XR 목록
+  const xrl=[];
+  if(pType==='입원')xrl.push('chest PA');
+  if(xrNone){
+    xrl.push('미시행');
+  } else {
+    document.querySelectorAll('#xrGrid .xr-chip:not(.locked)').forEach(el=>{
+      const k=el.dataset.key;if(xrState[k])xrl.push(getXRShort(k,xrState[k]));
+    });
+    // XR 직접입력
+    const xrCustom=(document.getElementById('xrCustomInput')?.value||'').trim();
+    if(xrCustom) xrl.push(xrCustom);
+  }
+
+  const hasShot=!xrNone && xrl.some(x=>x!=='미시행');
+  const hasChunna=al.includes('추나');
+
+  // 치료동선 — XR촬영/추후촬영/없음 × 입원/통원 (드래그로 순서 변경 가능)
+  const dongsunSigTA=`${hasShot}|${hasChunna}|${xrLater}|${pType}`;
+  syncDongsunSteps(computeDongsunSteps(hasShot,hasChunna,xrLater,pType),dongsunSigTA);
+  const dongsunText=dongsunSteps.join(' - ');
+  const inDong=dongsunText, outDong=dongsunText;
+
+  // ICT 직접입력 합산
+  function getPTShortWithCustom(session, customId){
+    const e=Object.entries(ptState[session]);
+    const custom=(document.getElementById(customId)?.value||'').trim();
+    const parts=e.map(([k,v])=>{
+      const nm=PT_MAP[k]||k;
+      if(v===true)return nm;
+      if(v==='Both')return'양측'+nm;
+      return v+nm;
+    });
+    if(custom) parts.push(custom);
+    return parts.length?parts.join(','):'미선택';
+  }
+
+  // 2차치료 문구
+  function getTx2Text(){
+    if(tx2Mode==='none') return '*오늘은 1차 치료만 진행';
+    if(tx2Mode==='consec') return '*오늘 2차 치료 연이어 진행';
+    // 시간 지정 — 칩 우선, 없으면 직접입력
+    const selChip=document.querySelector('#tx2TimeChips .act-chip.active');
+    const chipTime=selChip?selChip.dataset.time:'';
+    const directTime=(document.getElementById('tx2TimeInput')?.value||'').trim();
+    const t=chipTime||directTime;
+    return t?`*2차 치료는 ${t}에 진행 예정`:'*2차 치료 시간 미정';
+  }
+
+  const sep='=============';
+  const lines=[];
+
+  if(pType==='입원'){
+    lines.push({text:'Plan '+sep,cls:'c-blue'});
+    lines.push({text:`${name} (${isTA?'TA/':''}입원)`,cls:'c-blue'});
+    if(xrl.length){
+      const xrTxt=`[x-ray] ${xrl.join(', ')}`;
+      lines.push({text:xrLater?xrTxt+' (추후 촬영)':xrTxt,cls:'c-yellow'});
+    } else if(xrLater){
+      lines.push({text:'[x-ray] 추후 촬영',cls:'c-yellow'});
+    }
+    if(al.length)  lines.push({text:`액팅: ${al.join(' ')}`,cls:'c-purple'});
+    lines.push({text:`물치오전 : ICT${getPTShortWithCustom('am','ictAmCustom').split(',').length}/${getPTShortWithCustom('am','ictAmCustom')}`,cls:'c-teal'});
+    lines.push({text:`물치오후 : ICT${getPTShortWithCustom('pm','ictPmCustom').split(',').length}/${getPTShortWithCustom('pm','ictPmCustom')}`,cls:'c-teal'});
+    lines.push({text:`입원기한: ${fmtDeadline(dl)}`,cls:'c-green'});
+    const note=document.getElementById('specialNote').value.trim()||'x';
+    lines.push({text:'특이사항: '+note,cls:'c-text'});
+    lines.push({text:sep,cls:'c-blue'});
+    if(dongsunSteps.length) lines.push({text:`치료동선 : ${inDong}`,cls:'c-cyan'});
+    if(xrLater) lines.push({text:'*xr촬영 추후 진행',cls:'c-yellow'});
+    const tx2txt=getTx2Text();
+    lines.push({text:tx2txt,cls:'c-text'});
+  } else if(pType==='통원'){
+    lines.push({text:'Plan '+sep,cls:'c-blue'});
+    lines.push({text:`${name} (${isTA?'TA/':''}통원)`,cls:'c-blue'});
+    if(xrl.length){
+      const xrTxt=`[x-ray] ${xrl.join(', ')}`;
+      lines.push({text:xrLater?xrTxt+' (추후 촬영)':xrTxt,cls:'c-yellow'});
+    } else if(xrLater){
+      lines.push({text:'[x-ray] 추후 촬영',cls:'c-yellow'});
+    }
+    if(al.length)  lines.push({text:`액팅: ${al.join(' ')}`,cls:'c-purple'});
+    if(ictOutCount>0) lines.push({text:`물치 : ICT${ictOutCount}/${getPTShortWithCustom('out','ictOutCustom')}`,cls:'c-teal'});
+    const note2=document.getElementById('specialNote').value.trim()||'x';
+    lines.push({text:'특이사항: '+note2,cls:'c-text'});
+    lines.push({text:sep,cls:'c-blue'});
+    if(dongsunSteps.length) lines.push({text:`치료동선 : ${outDong}`,cls:'c-cyan'});
+    if(xrLater) lines.push({text:'*xr촬영 추후 진행',cls:'c-yellow'});
+  } else {
+    // 타입 미선택 — 기본 정보만
+    lines.push({text:'Plan '+sep,cls:'c-blue'});
+    lines.push({text:`${name}${isTA?' (TA)':''}`,cls:'c-blue'});
+    if(xrl.length) lines.push({text:`[x-ray] ${xrl.join(', ')}`,cls:'c-yellow'});
+    if(al.length)  lines.push({text:`액팅: ${al.join(' ')}`,cls:'c-purple'});
+    lines.push({text:sep,cls:'c-blue'});
+  }
+  return lines;
+}
+// ── 처방별 망진/절진 매핑 (전역 상수) ──
+const HERB_MJ={
+  // 기체증 및 근육 긴장군
+  '계지탕가감':     {mj:'설질담홍/박백태',        jj:'맥부완(浮緩)'},
+  '황기계지탕가감': {mj:'설질담백/박백태',        jj:'맥완약(緩弱)'},
+  '갈근탕가감':     {mj:'설질담/백태',            jj:'맥부긴(浮緊)'},
+  '작약감초탕가감': {mj:'설질담홍/박태',          jj:'맥현급(弦急)'},
+  '마행의감탕가감': {mj:'설질담/백활태',          jj:'맥완활(緩滑)'},
+  '부자탕가감':     {mj:'설질담백/백태',          jj:'맥침지(沈遲)'},
+  '이중탕가감':     {mj:'설질담백·치흔/백태',     jj:'맥침완(沈緩)'},
+  // 혈어증 및 외상 중심군
+  '당귀수산가감':   {mj:'설질자암·어반/박황태',   jj:'맥현삽(弦澀)'},
+  '계지복령환가감': {mj:'설질자담/백태',          jj:'맥삽(澀)'},
+  '월비가출탕가감': {mj:'설질홍·어반/황태',       jj:'맥현삭(弦數)'},
+  // 습담 및 대사 저하군
+  '오령산가감':     {mj:'설질담/백활태',          jj:'맥완활(緩滑)'},
+  '방기황기탕가감': {mj:'설질담백·치흔/백니태',   jj:'맥완약(緩弱)'},
+  '오적산가감':     {mj:'설질담자/백태',          jj:'맥침현삽(沈弦澀)'},
+  '의이인탕가감':   {mj:'설질담/백활태',          jj:'맥활(滑)'},
+  '당귀작약산가감': {mj:'설질담백/박백태',        jj:'맥세활(細滑)'},
+  // 심신 및 스트레스 관련군
+  '감맥대조탕가감': {mj:'설질홍/소태·무태',       jj:'맥세삭(細數)'},
+  '가미소요산가감': {mj:'설질홍/박황태',          jj:'맥현삭(弦數)'},
+  '시령탕가감':     {mj:'설질홍담/박황태',        jj:'맥현활(弦滑)'},
+};
+
+// ── GB 치료플랜 ──
+function buildLinesGB(){
+  const name=document.getElementById('patientName').value.trim()||'OOO';
+  const al=[];document.querySelectorAll('.act-chip.active').forEach(el=>{
+    if(!el.dataset.val)return; // 변증칩 등 val 없는 칩 제외
+    al.push(el.dataset.val);
+  });
+  const dl=getDeadline();
+  const xrl=[];
+  if(pType==='입원')xrl.push('chest PA');
+  if(xrNone){
+    xrl.push('미시행');
+  } else {
+    document.querySelectorAll('#xrGrid .xr-chip:not(.locked)').forEach(el=>{
+      const k=el.dataset.key;if(xrState[k])xrl.push(getXRShort(k,xrState[k]));
+    });
+    const xrCustom=(document.getElementById('xrCustomInput')?.value||'').trim();
+    if(xrCustom)xrl.push(xrCustom);
+  }
+  const hasShot=!xrNone && xrl.filter(x=>x!=='chest PA'&&x!=='미시행').length>0;
+  const hasChunna=al.includes('추나');
+  const dongsunSigGB=`${hasShot}|${hasChunna}|${xrLater}|${pType}`;
+  syncDongsunSteps(computeDongsunSteps(hasShot,hasChunna,xrLater,pType),dongsunSigGB);
+  const dongsunText=dongsunSteps.join(' - ');
+  const inDong=dongsunText, outDong=dongsunText;
+  function getPTPlain(session,customId){
+    const parts=Object.entries(ptState[session]).map(([k,v])=>{
+      const nm=PT_MAP[k]||k;
+      if(v===true)return nm;if(v==='Both')return'양측'+nm;return v+nm;
+    });
+    const custom=(document.getElementById(customId)?.value||'').trim();
+    if(custom)parts.push(custom);
+    return parts.join(' ');
+  }
+  function getICTFormatted(session,customId){
+    const parts=Object.entries(ptState[session]).map(([k,v])=>{
+      const nm=PT_MAP[k]||k;
+      if(v===true)return nm;if(v==='Both')return'양측'+nm;return v+nm;
+    });
+    const custom=(document.getElementById(customId)?.value||'').trim();
+    if(custom)parts.push(custom);
+    if(!parts.length)return null;
+    return`ICT${parts.length}/${parts.join(' ')}`;
+  }
+  const hasPTout=ictOutCount>0&&(ptCnt('out')>0||(document.getElementById('ictOutCustom')?.value||'').trim());
+  const actLine=[];
+  if(al.includes('침'))actLine.push('침');
+  if(al.includes('부항'))actLine.push('부항');
+  if(al.includes('약침'))actLine.push('약침');
+  if(al.includes('추나'))actLine.push('추나');
+  if(al.includes('스티커침'))actLine.push('스티커침');
+  if(al.includes('첩약'))actLine.push('첩약');
+  function getTx2Text(){
+    if(tx2Mode==='none')return'*오늘은 1차 치료만 진행';
+    if(tx2Mode==='consec')return'*오늘 2차 치료 연이어 진행';
+    const selChip=document.querySelector('#tx2TimeChips .act-chip.active');
+    const chipTime=selChip?selChip.dataset.time:'';
+    const directTime=(document.getElementById('tx2TimeInput')?.value||'').trim();
+    const t=chipTime||directTime;
+    return t?`*2차 치료는 ${t}에 진행 예정`:'*2차 치료 시간 미정';
+  }
+  const sep='==========';
+  const lines=[];
+  if(pType==='입원'){
+    lines.push({text:'Plan '+sep,cls:'c-blue'});
+    lines.push({text:`${name} (${isGB?'건보/':''}입원)`,cls:'c-blue'});
+    if(xrl.length)lines.push({text:(xrLater?`[x-ray] ${xrl.join(', ')} (추후 촬영)`:`[x-ray] ${xrl.join(', ')}`),cls:'c-yellow'});
+    else if(xrLater)lines.push({text:'[x-ray] 추후 촬영',cls:'c-yellow'});
+    if(actLine.length)lines.push({text:`액팅 : ${actLine.join(' ')}`,cls:'c-purple'});
+    const ictAM=getICTFormatted('am','ictAmCustom');
+    const ictPM=getICTFormatted('pm','ictPmCustom');
+    if(ictAM)lines.push({text:`물치오전 : ${ictAM}`,cls:'c-teal'});
+    else lines.push({text:'물치오전 : 미선택',cls:'c-teal'});
+    if(ictPM)lines.push({text:`물치오후 : ${ictPM}`,cls:'c-teal'});
+    else lines.push({text:'물치오후 : 미선택',cls:'c-teal'});
+    lines.push({text:`입원기한: ${fmtDeadline(dl)}`,cls:'c-green'});
+    lines.push({text:'특이사항 : '+(document.getElementById('specialNote').value.trim()||'x'),cls:'c-text'});
+    lines.push({text:sep,cls:'c-blue'});
+    if(dongsunSteps.length) lines.push({text:`치료동선 : ${inDong}`,cls:'c-cyan'});
+    if(xrLater)lines.push({text:'*xr촬영 추후 진행',cls:'c-yellow'});
+    lines.push({text:getTx2Text(),cls:'c-text'});
+  } else if(pType==='통원'){
+    const outParts=getPTPlain('out','ictOutCustom');
+    lines.push({text:'Plan '+sep,cls:'c-blue'});
+    lines.push({text:`${name} (${isGB?'건보/':''}통원)`,cls:'c-blue'});
+    if(xrl.length)lines.push({text:(xrLater?`[x-ray] ${xrl.join(', ')} (추후 촬영)`:`[x-ray] ${xrl.join(', ')}`),cls:'c-yellow'});
+    else if(xrLater)lines.push({text:'[x-ray] 추후 촬영',cls:'c-yellow'});
+    if(actLine.length)lines.push({text:`액팅 : ${actLine.join(' ')}`,cls:'c-purple'});
+    const ictOut=getICTFormatted('out','ictOutCustom');
+    if(ictOut)lines.push({text:`물치 : ${ictOut}`,cls:'c-teal'});
+    lines.push({text:'특이사항 : '+(document.getElementById('specialNote').value.trim()||'x'),cls:'c-text'});
+    lines.push({text:sep,cls:'c-blue'});
+    if(dongsunSteps.length) lines.push({text:`치료동선 : ${outDong}`,cls:'c-cyan'});
+    if(xrLater)lines.push({text:'*xr촬영 추후 진행',cls:'c-yellow'});
+  } else {
+    lines.push({text:'Plan '+sep,cls:'c-blue'});
+    lines.push({text:`${name}${isGB?' (건보)':''}`,cls:'c-blue'});
+    if(xrl.length)lines.push({text:`[x-ray] ${xrl.join(', ')}`,cls:'c-yellow'});
+    if(actLine.length)lines.push({text:`액팅 : ${actLine.join(' ')}`,cls:'c-purple'});
+    lines.push({text:sep,cls:'c-blue'});
+  }
+  return lines;
+}
+
+// ── GB 환자차트 ──
+function buildChartNoteGB(){
+  const al=[];document.querySelectorAll('.act-chip.active').forEach(el=>{if(el.dataset.val)al.push(el.dataset.val);});
+  const today=new Date();
+  const dateStr=(today.getMonth()+1)+'/'+today.getDate();
+  const ccMapGB={
+    '경항부':  {ir:'두경부'},'요배부':{ir:'요배부'},'흉복부':{ir:'흉복부'},
+    '상지부':  {ir:'상지부'},'하지부':{ir:'하지부'},
+    '두통 · 어지러움':{ir:'두경부'},'두통·어지러움':{ir:'두경부'},
+    '소화기질환':{ir:'흉복부'},'부인과질환':{ir:'흉복부'},
+    '비뇨생식계질환':{ir:'흉복부'},'대사성질환':{ir:'흉복부'},'신경성질환':{ir:'두경부'},
+  };
+  const ictParts=[],ccChecked=[];
+  document.querySelectorAll('.cc-item').forEach(item=>{
+    const h=item.querySelector('.cc-header');
+    if(!h.classList.contains('active'))return;
+    const key=item.dataset.key||'';
+    const label=h.querySelector('.cc-label')?.textContent.trim()||key;
+    const inputs=item.querySelectorAll('input');
+    const detail=inputs[0]?.value.trim()||'';
+    const onset=inputs[1]?.value.trim()||'';
+    const mapped=ccMapGB[key]||ccMapGB[label];
+    ccChecked.push({key,label,detail,onset,ir:mapped?.ir||''});
+    if(mapped?.ir&&!ictParts.includes(mapped.ir))ictParts.push(mapped.ir);
+  });
+  const selBJ=[];
+  { const v=document.getElementById('bjSelect')?.value; if(v)selBJ.push(v); }
+  const mangjin=selBJ.length?selBJ.map(b=>BJ_DATA[b]?.mangjin||'').filter(Boolean).join(' / '):'설진/면색/피부';
+  const jeoljin=selBJ.length?selBJ.map(b=>BJ_DATA[b]?.jeoljin||'').filter(Boolean).join(' / '):'맥진/복진';
+  const BR={text:'',cls:'c-text'};
+  const lines=[];
+  lines.push({text:dateStr,cls:'c-blue'});
+
+  // 진찰 단락 (문진·망진·절진·변증·첩약)
+  lines.push(BR);
+  if(al.includes('첩약'))lines.push({text:'첩약시행',cls:'c-teal'});
+  const munjinDetails=ccChecked.map(c=>c.detail).filter(Boolean).join(', ');
+  lines.push({text:`문진:${munjinDetails||''}`,cls:'c-text'});
+  lines.push({text:`망진:${mangjin}`,cls:'c-text'});
+  lines.push({text:`절진:${jeoljin}`,cls:'c-text'});
+  if(selBJ.length)lines.push({text:`변증:${selBJ[0]}`,cls:'c-purple'});
+
+  // 액팅 단락
+  const actingLines=[];
+  if(ictParts.length)actingLines.push({text:`IR - ${ictParts.slice(0,2).join('/')}`,cls:'c-teal'});
+  const hasChim=al.includes('침')||al.includes('부항');
+  if(hasChim){
+    const acuLine=[];
+    if(al.includes('침'))acuLine.push('침술');
+    acuLine.push('구술');
+    if(al.includes('부항'))acuLine.push('부항술');
+    actingLines.push({text:acuLine.join(','),cls:'c-teal'});
+  }
+  if(al.includes('약침')){
+    const yakchimCount=al.includes('추나')?1:2;
+    const yakchimParts=ictParts.length?ictParts.slice(0,yakchimCount):['두경부'];
+    actingLines.push({text:`약침 ${yakchimCount}부위-중성어혈/0.5cc, ${yakchimParts.join('/')}`,cls:'c-teal'});
+  }
+  if(al.includes('추나'))actingLines.push({text:'추나(CV/LB:soft tissue release, JS~Traction Cox, 장골교정)',cls:'c-teal'});
+  if(al.includes('스티커침'))actingLines.push({text:'스티커침 시행',cls:'c-teal'});
+  if(actingLines.length){lines.push(BR);actingLines.forEach(l=>lines.push(l));}
+
+  // C/C 단락
+  if(ccChecked.length){
+    lines.push(BR);
+    ccChecked.forEach((c,i)=>{
+      lines.push({text:`C/C #${i+1}. ${c.label}`,cls:'c-yellow'});
+      if(c.detail)lines.push({text:` ${c.detail}`,cls:'c-text'});
+      getCCExtraLines(c.key).forEach(t=>lines.push({text:` ${t}`,cls:'c-text'}));
+    });
+  }
+
+  // O/S 단락
+  const hasOnset=ccChecked.some(c=>c.onset);
+  if(hasOnset){
+    lines.push(BR);
+    ccChecked.forEach((c,i)=>{
+      if(c.onset)lines.push({text:`O/S #${i+1}. ${c.onset}`,cls:'c-text'});
+    });
+  }
+
+  // 타병원·P/H 단락
+  lines.push(BR);
+  lines.push({text:'타병원진료 : '+(document.getElementById('otherHospitalGB').value.trim()||'x'),cls:'c-text'});
+  lines.push({text:'P/H - '+(document.getElementById('phNote').value.trim()||''),cls:'c-text'});
+  return lines;
+}
+
+// ── 환자차트 생성 ──
+function buildChartNote(){
+  if(chartMode==='gb') return buildChartNoteGB();
+  const name=document.getElementById('patientName').value.trim()||'OOO';
+  const acc=document.getElementById('accidentDesc').value.trim();
+  const injStr=document.getElementById('injuryDate').value;
+  const injD=pd(injStr);
+  const al=[];document.querySelectorAll('.act-chip.active').forEach(el=>{if(el.dataset.val)al.push(el.dataset.val);}); // val 없는 tx2 시간칩 제외
+  // 침치료만 활성 시 다른 항목 제거
+  if(al.includes('침치료만')){al.length=0;al.push('침치료만');}
+  const today=new Date();
+  const dateStr=(today.getMonth()+1)+'.'+today.getDate();
+
+  // C/C 체크 항목 → IR/ICT 부위 매핑
+  const ccMap={'경항부':'두경부','요배부':'요배부','흉복부':'흉복부','상지부':'상지부','하지부':'하지부','두통 · 어지러움':'두경부','두통·어지러움':'두경부'};
+  const ictParts=[];
+  const ccChecked=[];
+  document.querySelectorAll('.cc-item').forEach(item=>{
+    const h=item.querySelector('.cc-header');
+    if(!h.classList.contains('active'))return;
+    // TA 모드에서 GB 전용 내과계 항목 제외
+    if(chartMode==='ta'&&item.classList.contains('gb-cc-block'))return;
+    const label=h.querySelector('.cc-label').textContent.trim();
+    const detail=item.querySelector('input')?.value.trim()||'';
+    ccChecked.push({key:item.dataset.key||'',label,detail});
+    const mapped=ccMap[label];
+    if(mapped&&!ictParts.includes(mapped))ictParts.push(mapped);
+  });
+
+  const injFmt=injD?`${injD.getFullYear()}.${injD.getMonth()+1}.${injD.getDate()}`:'____.__.__';
+
+  const lines=[];
+  lines.push({text:dateStr,cls:'c-blue'});
+
+  const BR={text:'',cls:'c-text'}; // 빈줄
+
+  // 한약처방 단락
+  if(al.includes('첩약')){
+    lines.push(BR);
+    if(herbState.later){
+      lines.push({text:'<한약처방> (처방 추후 선택 예정)',cls:'c-purple'});
+    } else if(herbState.rx){
+      const rx=HERB_RX.find(r=>r.name===herbState.rx);
+      if(rx){
+        lines.push({text:`<한약처방>`,cls:'c-purple'});
+        const addIngr=herbState.add.map(a=>a.name+'1').join(' ');
+        lines.push({text:`[${rx.name}](1첩) - ${rx.ingr}${addIngr?' '+addIngr:''}`,cls:'c-purple'});
+        const munjinDetails=ccChecked.map(c=>c.detail).filter(Boolean).join(', ');
+        lines.push({text:`문진:${munjinDetails||''}`,cls:'c-text'});
+        const mjData=HERB_MJ[rx.name]||{mj:'',jj:''};
+        lines.push({text:`망진:${mjData.mj}`,cls:'c-text'});
+        lines.push({text:`절진:${mjData.jj}`,cls:'c-text'});
+        let bjText='변증: '+rx.bj;
+        herbState.add.forEach((a,i)=>{
+          const ad=HERB_ADD.find(x=>x.name===a.name);
+          if(ad)bjText+=(i===0?' ':'또한 ')+ad.desc;
+        });
+        lines.push({text:bjText,cls:'c-text'});
+      }
+    }
+  } else {
+    // 첩약 미선택 시 — 변증 선택 기반 문진·망진·절진 출력
+    const selBJ=[];
+    { const v=document.getElementById('bjSelect')?.value; if(v)selBJ.push(v); }
+    if(selBJ.length){
+      lines.push(BR);
+      const munjinDetails=ccChecked.map(c=>c.detail).filter(Boolean).join(', ');
+      lines.push({text:`문진:${munjinDetails||''}`,cls:'c-text'});
+      const bjD=BJ_DATA[selBJ[0]]||{mangjin:'',jeoljin:''};
+      lines.push({text:`망진:${bjD.mangjin}`,cls:'c-text'});
+      lines.push({text:`절진:${bjD.jeoljin}`,cls:'c-text'});
+      lines.push({text:`변증:${selBJ[0]}`,cls:'c-purple'});
+    }
+  }
+
+  // 액팅 단락
+  const actingLines=[];
+  if(ictParts.length) actingLines.push({text:`IR/ICT-한의사 시행함 : ${ictParts.slice(0,2).join('/')}`,cls:'c-teal'});
+  if(al.includes('약침')){
+    const yakchimCount=al.includes('추나')?1:2;
+    const yakchimParts=ictParts.length?ictParts.slice(0,yakchimCount):['두경부'];
+    actingLines.push({text:`약침 ${yakchimCount}부위/각 0.5cc/중성어혈 : ${yakchimParts.join('/')}`,cls:'c-teal'});
+  }
+  if(al.includes('추나')) actingLines.push({text:'추나(CV/LB : soft tissue release, JS~Traction Cox, 장골교정)',cls:'c-teal'});
+  if(al.includes('스티커침')) actingLines.push({text:'스티커침 시행',cls:'c-teal'});
+  if(al.includes('침치료만')) actingLines.push({text:'침술,구술',cls:'c-teal'});
+  if(al.includes('첩약')) actingLines.push({text:'첩약 처방',cls:'c-teal'});
+  if(actingLines.length){lines.push(BR);actingLines.forEach(l=>lines.push(l));}
+
+  // C/C 단락
+  if(ccChecked.length){
+    lines.push(BR);
+    lines.push({text:'C/C',cls:'c-yellow'});
+    ccChecked.forEach((c,i)=>{
+      lines.push({text:`#${i+1} ${c.label} 통증`,cls:'c-text'});
+      if(c.detail) lines.push({text:c.detail,cls:'c-text'});
+      getCCExtraLines(c.key).forEach(t=>lines.push({text:t,cls:'c-text'}));
+    });
+  }
+
+  // O/S 단락
+  lines.push(BR);
+  lines.push({text:`O/S ${injFmt} TA 후 발생. (환자 진술에 의거함)`,cls:'c-text'});
+  if(acc||seatSelected) lines.push({text:`[경위] ${seatSelected?seatSelected+'. ':''}${acc||''}`,cls:'c-text'});
+
+  // 타병원·P/H·설명 단락
+  const ohTxt=document.getElementById('otherHospital').value.trim()||'x';
+  const phTxt=document.getElementById('phNote').value.trim()||'X';
+  lines.push(BR);
+  lines.push({text:'타병원진료 : '+ohTxt,cls:'c-text'});
+  lines.push({text:'P/H - '+phTxt,cls:'c-text'});
+  lines.push({text:'#TA로 유발된 증상 치료가 목표임을 설명함',cls:'c-text'});
+  lines.push({text:'#증상 미호전 or 악화시 추가 검사 필요성 설명함',cls:'c-text'});
+  lines.push({text:'#치료 시작 후 초기 5~7일간 통증 증감할 가능성 설명함',cls:'c-text'});
+  lines.push({text:'#증상 지속 및 심화시 정밀검사 가능성 설명함',cls:'c-text'});
+  if(pType==='입원') lines.push({text:'#입원치료 가능기한 고지드림',cls:'c-text'});
+  return lines;
+}
+
+function render(){
+  // 변증 카드: GB는 항상 표시, TA는 첩약 미선택 시만 표시
+  const bjCard=document.getElementById('byeonjeungCard');
+  if(bjCard){
+    const cheopYakActive=!!document.querySelector('.act-chip[data-val="첩약"].active');
+    bjCard.style.display=(chartMode==='gb'||!cheopYakActive)?'block':'none';
+  }
+  const chipRow=document.querySelector('#actingCard .chip-row');
+  if(chipRow){
+    const on=!!document.querySelector('.act-chip[data-val="침치료만"].active');
+    chipRow.classList.toggle('exclusive-on',on);
+  }
+  const dl=getDeadline();
+  // TA: dlVal 업데이트
+  const dlValEl=document.getElementById('dlVal');
+  if(dlValEl) dlValEl.textContent=dl&&dl!=='later'?fd(dl):'수상일을 입력하세요';
+  const dlHintEl=document.getElementById('dlHint');
+  if(dlHintEl){
+    dlHintEl.textContent=(taDeadlineMode==='fracture'&&taFxWeeks)?`수상일 기준 ${taFxWeeks}주 (${taFxPart} - ${taFxSub})`:'수상일 기준 7일째';
+  }
+  const dlAutoValEl=document.getElementById('dlAutoVal');
+  if(dlAutoValEl){
+    if(chartMode==='gb'&&gbDeadlineMode==='auto'){
+      dlAutoValEl.textContent=dl?fd(dl):'초진일을 입력하세요';
+    }
+  }
+  if(ictOutCount>0)document.getElementById('outCountHint').textContent=`(${ptCnt('out')}/${ictOutCount} 선택됨)`;
+  else document.getElementById('outCountHint').textContent='';
+  const lines=buildLines();
+  renderDongsunList();
+  document.getElementById('outputText').innerHTML=lines.length?lines.map(l=>`<div class="${l.cls}">${l.text}</div>`).join(''):'<span style="color:var(--text3)">이름과 정보를 입력하면 자동으로 생성됩니다.</span>';
+  const clines=buildChartNote();
+  document.getElementById('chartText').innerHTML=clines.length?clines.map(l=>`<div class="${l.cls}">${l.text}</div>`).join(''):'<span style="color:var(--text3)">이름과 정보를 입력하면 자동으로 생성됩니다.</span>';
+  const memoEl=document.getElementById('memoText');
+  if(memoEl){
+    const doctor=document.getElementById('doctorName')?.value.trim()||'';
+    memoEl.innerHTML=doctor?buildMemo():'<span style="color:var(--text3)">담당한의사를 입력하면 자동으로 생성됩니다.</span>';
+  }
+}
+// ── 복사 함수 (클립보드 복사 공용) ──
+function doCopy(text, btn, origLabel){
+  function fallback(){
+    const ta=document.createElement('textarea');
+    ta.value=text;ta.style.cssText='position:fixed;top:-9999px;left:-9999px;opacity:0;';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);
+    btn.textContent='✓ 복사됨!';setTimeout(()=>btn.textContent=origLabel,1500);
+  }
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(text).then(()=>{btn.textContent='✓ 복사됨!';setTimeout(()=>btn.textContent=origLabel,1500);}).catch(()=>fallback());
+  } else { fallback(); }
+}
+function copyChart(){const t=buildLines().map(l=>l.text).join('\n');const b=document.querySelector('.btn-copy');doCopy(t,b,'치료플랜 복사');}
+function copyChartNote(){const t=buildChartNote().map(l=>l.text).join('\n');const b=document.getElementById('btnChart');doCopy(t,b,'환자차트 복사');}
+// ── 메모 ── TA: 경(수상일+21일)담당한의사/추나여부/첩약명3-1(초진일+7일) / GB: 담당한의사만
+function buildMemo(){
+  const doctor=document.getElementById('doctorName')?.value.trim()||'담당한의사';
+  if(chartMode==='gb') return doctor;
+  const hasChunna=!!document.querySelector('.act-chip[data-val="추나"]')?.classList.contains('active');
+  const chunnaLabel=hasChunna?'추나O':'추나보류';
+  const injStr=document.getElementById('injuryDate')?.value||'';
+  const injD=pd(injStr)||new Date();
+  const gyeongD=ad(injD,21);
+  const prefix=`경(${gyeongD.getMonth()+1}.${gyeongD.getDate()})`;
+  if(!herbState.later&&!herbState.rx){
+    return `${prefix}${doctor}/${chunnaLabel}/첩약보류`;
+  }
+  const herbName=herbState.later?'추후선택':herbState.rx;
+  const fvStr=document.getElementById('firstVisitDate')?.value||'';
+  const baseD=pd(fvStr)||new Date();
+  const dueD=ad(baseD,7);
+  const dateStr=`${dueD.getMonth()+1}.${dueD.getDate()}`;
+  return `${prefix}${doctor}/${chunnaLabel}/${herbName}3-1(${dateStr})`;
+}
+function copyMemo(){const t=buildMemo();const b=document.getElementById('btnMemo');doCopy(t,b,'메모 복사');}
+// ── 초기화 (render는 마지막에 한 번만) ──
+(function(){
+  // 1. 초기 모드 클래스 + 상태
+  document.body.classList.add('mode-ta');
+  isTA=true; isGB=false;
+  updateModeBadge();
+
+  // 2. 오늘 날짜 자동입력
+  const t=new Date();
+  const today=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  const fv=document.getElementById('firstVisitDate');
+  if(fv&&!fv.value) fv.value=today;
+  const fvgb=document.getElementById('firstVisitDateGB');
+  if(fvgb&&!fvgb.value) fvgb.value=today;
+
+  // 2-1. 담당한의사 저장값 복원
+  const dn=document.getElementById('doctorName');
+  const savedDoctor=localStorage.getItem('doctorName');
+  if(dn&&savedDoctor) dn.value=savedDoctor;
+
+  // 2-2. C/C NRS·ROM 버튼 생성
+  initCCExtra();
+
+  // 3. tx2 초기 상태
+  tx2Mode='consec';
+  ['none','time','consec'].forEach(m=>{
+    const el=document.getElementById('tx2-'+m);
+    if(el) el.classList.toggle('active',m==='consec');
+  });
+  const box=document.getElementById('tx2TimeBox');
+  if(box) box.style.display='none';
+
+  // 4. 최초 render
+  render();
+})();
+</script>
+<div style="height:20px"></div>
+
+<div style="text-align:center;padding:24px 0 12px;color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;">
+  made by 김민재
+</div>
+
+</body>
+</html>
