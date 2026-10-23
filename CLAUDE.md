@@ -1,7 +1,7 @@
 # 통합차트
 
 한방 교통사고(TA) 임상 차트 웹앱. 자보(`setChartMode('ta')`)·건보(`'gb'`) 두 모드를 `index.html` 한 파일에서 처리.
-GitHub Pages로 배포됨(`index.html` = 사이트). 버전 관리는 git 기록·태그로 함.
+GitHub Pages로 배포됨(`index.html` = 사이트). 버전 관리는 git 커밋 기록으로 함.
 
 ## 규칙
 - 단일 파일 유지(분리 금지), 순수 HTML/CSS/JS, 외부 라이브러리 금지
@@ -19,7 +19,7 @@ GitHub Pages로 배포됨(`index.html` = 사이트). 버전 관리는 git 기록
    - 이번 세션 변경 내용
    -->
    ```
-3. 커밋 메시지 `[YYMMDD 업데이트] 요약`, 태그 `YYMMDD`(같은 날 재저장은 `YYMMDD-2`…), 브랜치·태그 push
+3. 커밋 메시지 `[YYMMDD 업데이트] 요약`으로 커밋 후 push (이 환경은 태그 push가 막혀 있어 태그는 쓰지 않음)
 
 ## 롤백
-`git checkout <태그> -- index.html` 후 새 커밋으로 push. 기록은 지우지 않음(force-push 금지).
+`git log --oneline --grep 'YYMMDD 업데이트'`로 커밋을 찾아 `git checkout <커밋> -- index.html` 후 새 커밋으로 push. 기록은 지우지 않음(force-push 금지).
